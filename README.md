@@ -13,6 +13,10 @@ npm start
 
 `PORT` 環境変数で待受ポートを変更できます。
 
+## GitHub Pages
+
+フロントエンドは [https://scratch-chat.github.io/](https://scratch-chat.github.io/) で公開し、`main`へのpush時にGitHub Actionsから`public/`をデプロイします。GitHub Pagesは静的ファイルのみを配信するため、リアルタイムチャットには別途WebSocketサーバーが必要です。Pages用の接続先は`public/config.js`で設定します。現在はCodespacesのポート8000を接続先にしています。Codespaceが停止するとチャットも利用できなくなるため、常時利用には常時稼働するWebSocketホストが必要です。
+
 ## ロック画面
 
 テキスト入力欄以外にフォーカスがある状態で `6` → `7` → `8` → `0` と押すと、許可されたネットワークからの操作に限り、全参加者のロック画面の表示／解除を切り替えます。

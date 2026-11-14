@@ -84,7 +84,8 @@ function setConnected(connected) {
 
 function connect() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  socket = new WebSocket(`${protocol}//${window.location.host}/ws`);
+  const socketUrl = window.CHAT_WEBSOCKET_URL || `${protocol}//${window.location.host}/ws`;
+  socket = new WebSocket(socketUrl);
   setConnected(false);
 
   socket.addEventListener("open", () => {
