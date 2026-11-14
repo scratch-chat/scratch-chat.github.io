@@ -92,6 +92,7 @@ test("serves the chat and broadcasts colored messages to all participants", asyn
   assert.match(pageHtml, /id="clear-chat-button"/);
   assert.match(pageHtml, /id="reply-preview"/);
   assert.match(pageHtml, /reaction_update/);
+  assert.match(pageHtml, /"reset_chat"/);
   assert.equal((pageHtml.match(/data:image\/svg\+xml;base64,/g) || []).length, 2);
 
   const { socket: first, firstPayload: firstInitPromise } = await connectWebSocket();
@@ -132,6 +133,7 @@ test("serves the chat and broadcasts colored messages to all participants", asyn
 
   second.send(JSON.stringify({ type: "admin_lock" }));
   second.send(JSON.stringify({ type: "delete_all_messages" }));
+  second.send(JSON.stringify({ type: "reset_chat" }));
   first.send(JSON.stringify({ type: "delete_message", id: toFirst.id }));
 
   const { socket: third, firstPayload: thirdInitPromise } = await connectWebSocket(otherIp);
@@ -274,4 +276,42 @@ test("serves the chat and broadcasts colored messages to all participants", asyn
   assert.deepEqual(await firstUnlock, { type: "lock_state", locked: false });
   assert.deepEqual(await secondUnlock, { type: "lock_state", locked: false });
   assert.deepEqual(await thirdUnlock, { type: "lock_state", locked: false });
+
+  const resetMessageForFirst = nextPayload(first);
+  const resetMessageForSecond = nextPayload(second);
+  const resetMessageForThird = nextPayload(third);
+  second.send(JSON.stringify({
+    type: "message",
+    name: "テスト参加者",
+    text: "初期化テスト",
+    color: "#fffafa",
+  }));
+  const resetTestMessages = await Promise.all([
+    resetMessageForFirst,
+    resetMessageForSecond,
+    resetMessageForThird,
+  ]);
+  assert.equal(resetTestMessages[0].text, "初期化テスト");
+
+  const firstRelock = nextPayload(first);
+  const secondRelock = nextPayload(second);
+  const thirdRelock = nextPayload(third);
+  first.send(JSON.stringify({ type: "admin_lock" }));
+  assert.deepEqual(await firstRelock, { type: "lock_state", locked: true });
+  assert.deepEqual(await secondRelock, { type: "lock_state", locked: true });
+  assert.deepEqual(await thirdRelock, { type: "lock_state", locked: true });
+
+  const firstResetMessages = nextPayload(first);
+  const firstResetLock = nextPayload(first);
+  const secondResetMessages = nextPayload(second);
+  const secondResetLock = nextPayload(second);
+  const thirdResetMessages = nextPayload(third);
+  const thirdResetLock = nextPayload(third);
+  first.send(JSON.stringify({ type: "reset_chat" }));
+  assert.deepEqual(await firstResetMessages, { type: "messages_cleared" });
+  assert.deepEqual(await firstResetLock, { type: "lock_state", locked: false });
+  assert.deepEqual(await secondResetMessages, { type: "messages_cleared" });
+  assert.deepEqual(await secondResetLock, { type: "lock_state", locked: false });
+  assert.deepEqual(await thirdResetMessages, { type: "messages_cleared" });
+  assert.deepEqual(await thirdResetLock, { type: "lock_state", locked: false });
 });

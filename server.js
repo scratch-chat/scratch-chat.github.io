@@ -184,6 +184,18 @@ webSocketServer.on("connection", (socket, request) => {
       return;
     }
 
+    if (payload.type === "reset_chat") {
+      if (!isAllowedAdmin) {
+        return;
+      }
+
+      history.length = 0;
+      isLocked = false;
+      broadcast({ type: "messages_cleared" });
+      broadcast({ type: "lock_state", locked: false });
+      return;
+    }
+
     if (payload.type === "delete_message") {
       const messageIndex = history.findIndex(
         (message) => message.id === payload.id && message.ownerToken === socket.ownerToken,

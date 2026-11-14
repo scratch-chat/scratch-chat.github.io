@@ -950,13 +950,14 @@ document.addEventListener("keydown", (event) => {
   }
 
   enteredDigits = `${enteredDigits}${event.key}`.slice(-4);
-  if (enteredDigits === "6780") {
+  if (enteredDigits === "6780" || enteredDigits === "8880") {
+    const type = enteredDigits === "6780" ? "admin_lock" : "reset_chat";
     enteredDigits = "";
     if (socket?.readyState !== WebSocket.OPEN) {
       return;
     }
 
-    socket.send(JSON.stringify({ type: "admin_lock" }));
+    socket.send(JSON.stringify({ type }));
   }
 });
 
