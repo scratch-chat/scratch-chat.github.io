@@ -148,20 +148,6 @@ h1 {
   color: #a0a0a8;
 }
 
-.clear-chat-button {
-  padding: 5px 8px;
-  border: 1px solid #f1d2d2;
-  border-radius: 7px;
-  background: #fff;
-  color: #b44848;
-  font-size: 10px;
-  cursor: pointer;
-}
-
-.clear-chat-button[hidden] {
-  display: none;
-}
-
 .conversation {
   display: flex;
   min-height: 0;
@@ -574,7 +560,6 @@ h1 {
             <span id="connection-label">接続中...</span>
           </span>
           <span class="participant-count" id="participant-count">参加者 -- 人</span>
-          <button class="clear-chat-button" id="clear-chat-button" type="button" hidden>全員分を削除</button>
         </div>
       </header>
 
@@ -660,7 +645,6 @@ const replyCancelButton = document.querySelector("#reply-cancel-button");
 const connectionStatus = document.querySelector("#connection-status");
 const connectionLabel = document.querySelector("#connection-label");
 const participantCount = document.querySelector("#participant-count");
-const clearChatButton = document.querySelector("#clear-chat-button");
 const lockScreen = document.querySelector("#lock-screen");
 
 let selectedColor = COLORS[3].value;
@@ -846,7 +830,6 @@ function setConnected(connected) {
 }
 
 function connect() {
-  clearChatButton.hidden = true;
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const socketUrl = window.CHAT_WEBSOCKET_URL || `${protocol}//${window.location.host}/ws`;
   socket = new WebSocket(socketUrl);
@@ -869,7 +852,6 @@ function connect() {
     if (payload.type === "init") {
       participantCount.textContent = `参加者 ${payload.participants} 人`;
       setLockState(payload.locked);
-      clearChatButton.hidden = !payload.canDeleteAll;
       for (const message of payload.messages) {
         appendMessage(message);
       }
@@ -919,16 +901,6 @@ form.addEventListener("submit", (event) => {
 });
 
 replyCancelButton.addEventListener("click", clearReply);
-
-clearChatButton.addEventListener("click", () => {
-  if (
-    socket?.readyState !== WebSocket.OPEN
-    || !window.confirm("全員のチャット履歴を削除しますか？")
-  ) {
-    return;
-  }
-  socket.send(JSON.stringify({ type: "delete_all_messages" }));
-});
 
 document.addEventListener("keydown", (event) => {
   const target = event.target;
