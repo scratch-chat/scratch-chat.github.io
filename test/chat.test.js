@@ -81,9 +81,10 @@ function connectWebSocket(clientIp = "203.0.113.42") {
   });
   const opened = once(socket, "open");
   const firstPayload = nextPayload(socket);
+  const ownerToken = randomUUID();
   return opened.then(() => {
-    socket.send(JSON.stringify({ type: "identify", token: randomUUID() }));
-    return { socket, firstPayload };
+    socket.send(JSON.stringify({ type: "identify", token: ownerToken }));
+    return { socket, firstPayload, ownerToken };
   });
 }
 
@@ -95,6 +96,8 @@ test("serves the chat page and exposes admin controls to every client", async (t
   assert.match(pageHtml, /id="lock-screen"/);
   assert.match(pageHtml, /window\.CHAT_WEBSOCKET_URL/);
   assert.match(pageHtml, /"reset_chat"/);
+  assert.match(pageHtml, /id="media-input"/);
+  assert.match(pageHtml, /15 \* 60/);
 
   const { socket: first, firstPayload: firstInitPromise } = await connectWebSocket("203.0.113.42");
   t.after(() => first.close());
@@ -133,14 +136,89 @@ test("serves the chat page and exposes admin controls to every client", async (t
   const firstLock = nextPayloadOfType(first, "lock_state");
   const secondLock = nextPayloadOfType(second, "lock_state");
   second.send(JSON.stringify({ type: "admin_lock" }));
-  assert.deepEqual(await firstLock, { type: "lock_state", locked: true });
-  assert.deepEqual(await secondLock, { type: "lock_state", locked: true });
+  const firstLockState = await firstLock;
+  const secondLockState = await secondLock;
+  assert.equal(firstLockState.type, "lock_state");
+  assert.equal(firstLockState.locked, true);
+  assert.equal(secondLockState.type, "lock_state");
+  assert.equal(secondLockState.locked, false);
+  assert.equal(secondLockState.isLockOwner, true);
 
   const firstClear = nextPayloadOfType(first, "messages_cleared");
   const secondClear = nextPayloadOfType(second, "messages_cleared");
   first.send(JSON.stringify({ type: "delete_all_messages" }));
   assert.deepEqual(await firstClear, { type: "messages_cleared" });
   assert.deepEqual(await secondClear, { type: "messages_cleared" });
+});
+
+test("uploads an image, shares it in chat, and serves byte ranges", async (t) => {
+  const { socket, firstPayload, ownerToken } = await connectWebSocket();
+  t.after(() => socket.close());
+  await firstPayload;
+
+  const imageBytes = Buffer.from("sample-image-content");
+  const uploadResponse = await fetch(`${baseUrl}/api/uploads?name=sample.png`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "image/png",
+      "X-Owner-Token": ownerToken,
+    },
+    body: imageBytes,
+  });
+  assert.equal(uploadResponse.status, 201);
+  const media = await uploadResponse.json();
+  assert.equal(media.type, "image");
+  assert.equal(media.name, "sample.png");
+
+  const partialMediaResponse = await fetch(`${baseUrl}${media.url}`, {
+    headers: { Range: "bytes=0-5" },
+  });
+  assert.equal(partialMediaResponse.status, 206);
+  assert.equal(partialMediaResponse.headers.get("content-range"), `bytes 0-5/${imageBytes.length}`);
+  assert.deepEqual(Buffer.from(await partialMediaResponse.arrayBuffer()), imageBytes.subarray(0, 6));
+
+  const incomingMessage = nextPayloadOfType(socket, "message");
+  socket.send(JSON.stringify({
+    type: "message",
+    name: "画像投稿者",
+    text: "",
+    mediaId: media.id,
+  }));
+  const message = await incomingMessage;
+  assert.equal(message.text, "");
+  assert.equal(message.media.url, media.url);
+  assert.equal(message.media.mimeType, "image/png");
+});
+
+test("rejects videos longer than 15 minutes", async () => {
+  const response = await fetch(`${baseUrl}/api/uploads?name=long.mp4`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "video/mp4",
+      "X-Media-Duration": "901",
+      "X-Owner-Token": randomUUID(),
+    },
+  });
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /15分以内/);
+});
+
+test("admin lock does not lock the owner but shows a lock status badge", async (t) => {
+  const { socket: first, firstPayload: firstInitPromise } = await connectWebSocket("203.0.113.42");
+  const { socket: second, firstPayload: secondInitPromise } = await connectWebSocket("198.51.100.15");
+  t.after(() => { first.close(); second.close(); });
+  await Promise.all([firstInitPromise, secondInitPromise]);
+
+  const firstLock = nextPayloadOfType(first, "lock_state");
+  const secondLock = nextPayloadOfType(second, "lock_state");
+  second.send(JSON.stringify({ type: "admin_lock" }));
+
+  const firstLockState = await firstLock;
+  const secondLockState = await secondLock;
+  assert.equal(firstLockState.locked, true);
+  assert.equal(firstLockState.isLockOwner, false);
+  assert.equal(secondLockState.locked, false);
+  assert.equal(secondLockState.isLockOwner, true);
 });
 
 test("reset_chat clears history and unlocks the room without any auth gate", async (t) => {
@@ -164,8 +242,14 @@ test("reset_chat clears history and unlocks the room without any auth gate", asy
   const firstLock = nextPayloadOfType(first, "lock_state");
   const secondLock = nextPayloadOfType(second, "lock_state");
   first.send(JSON.stringify({ type: "admin_lock" }));
-  assert.deepEqual(await firstLock, { type: "lock_state", locked: true });
-  assert.deepEqual(await secondLock, { type: "lock_state", locked: true });
+  const firstLockState = await firstLock;
+  const secondLockState = await secondLock;
+  assert.equal(firstLockState.type, "lock_state");
+  assert.equal(firstLockState.locked, false);
+  assert.equal(firstLockState.isLockOwner, true);
+  assert.equal(secondLockState.type, "lock_state");
+  assert.equal(secondLockState.locked, true);
+  assert.equal(secondLockState.isLockOwner, false);
 
   const firstReset = nextPayloadOfType(first, "messages_cleared");
   const secondReset = nextPayloadOfType(second, "messages_cleared");
@@ -174,6 +258,10 @@ test("reset_chat clears history and unlocks the room without any auth gate", asy
   second.send(JSON.stringify({ type: "reset_chat" }));
   assert.deepEqual(await firstReset, { type: "messages_cleared" });
   assert.deepEqual(await secondReset, { type: "messages_cleared" });
-  assert.deepEqual(await firstResetLock, { type: "lock_state", locked: false });
-  assert.deepEqual(await secondResetLock, { type: "lock_state", locked: false });
+  const firstResetLockState = await firstResetLock;
+  const secondResetLockState = await secondResetLock;
+  assert.equal(firstResetLockState.type, "lock_state");
+  assert.equal(firstResetLockState.locked, false);
+  assert.equal(secondResetLockState.type, "lock_state");
+  assert.equal(secondResetLockState.locked, false);
 });

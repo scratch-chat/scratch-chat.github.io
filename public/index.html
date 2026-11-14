@@ -50,7 +50,8 @@ input {
   flex-direction: column;
   margin: 0 auto;
   overflow: hidden;
-  background: #fff;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(2px);
 }
 
 .lock-screen {
@@ -58,7 +59,8 @@ input {
   z-index: 10;
   inset: 0;
   display: grid;
-  place-items: center;
+  place-items: start center;
+  padding-top: clamp(64px, 10vh, 120px);
   overflow: hidden;
   background: #fff;
 }
@@ -75,6 +77,7 @@ input {
 }
 
 .chat-header {
+  position: relative;
   display: flex;
   flex: 0 0 auto;
   min-height: 88px;
@@ -83,6 +86,26 @@ input {
   gap: 20px;
   padding: 18px 30px;
   border-bottom: 1px solid #f0f0f2;
+}
+
+.lock-status {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 6px 12px;
+  border: 1px solid #f2d0d8;
+  border-radius: 999px;
+  background: #fff5f7;
+  color: #9c5c6a;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.lock-status[hidden] {
+  display: none;
 }
 
 .brand {
@@ -293,6 +316,33 @@ h1 {
   white-space: pre-wrap;
 }
 
+.message-media {
+  max-width: 100%;
+  margin-top: 8px;
+}
+
+.message-media img,
+.message-media video {
+  display: block;
+  max-width: min(100%, 520px);
+  max-height: 420px;
+  border: 1px solid #f0f0f2;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.message-media video {
+  width: min(520px, 100%);
+}
+
+.media-name {
+  display: block;
+  margin-top: 5px;
+  color: #777783;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 .composer {
   flex: 0 0 auto;
   padding: 18px 30px calc(20px + env(safe-area-inset-bottom));
@@ -411,6 +461,30 @@ h1 {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.attach-button {
+  display: inline-flex;
+  height: 46px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 1px solid #eaeaf0;
+  border-radius: 12px;
+  background: #fff;
+  color: #666671;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.attach-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.file-input {
+  display: none;
 }
 
 .input-row input {
@@ -554,6 +628,7 @@ h1 {
             <p class="subtitle">気軽に話そう、リアルタイムで。</p>
           </div>
         </div>
+        <div class="lock-status" id="lock-status" hidden>ロック中</div>
         <div class="connection-info">
           <span class="connection-status" id="connection-status">
             <span class="status-dot" aria-hidden="true"></span>
@@ -589,6 +664,13 @@ h1 {
           <button class="reply-cancel-button" id="reply-cancel-button" type="button" aria-label="返信を解除">×</button>
         </div>
         <div class="input-row">
+          <button class="attach-button" id="attach-button" type="button">画像・動画</button>
+          <input
+            class="file-input"
+            id="media-input"
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp,image/avif,video/mp4,video/webm,video/quicktime"
+          >
           <label class="visually-hidden" for="message-input">メッセージ</label>
           <input
             id="message-input"
@@ -605,7 +687,7 @@ h1 {
             </svg>
           </button>
         </div>
-        <p class="composer-hint">Enter キーで送信できます</p>
+        <p class="composer-hint" id="upload-status" aria-live="polite">Enter キーで送信できます</p>
       </form>
     </main>
     <div class="lock-screen" id="lock-screen" role="img" aria-label="管理者によりアクセスができません" tabindex="-1" hidden>
@@ -615,6 +697,14 @@ h1 {
 window.CHAT_WEBSOCKET_URL = window.location.hostname === "scratch-chat.github.io"
   ? "wss://studious-tribble-q79q5qrprrrqcx7wv-8000.app.github.dev/ws"
   : "";
+const CHAT_HTTP_BASE_URL = (() => {
+  if (!window.CHAT_WEBSOCKET_URL) {
+    return window.location.origin;
+  }
+  const url = new URL(window.CHAT_WEBSOCKET_URL);
+  url.protocol = url.protocol === "wss:" ? "https:" : "http:";
+  return url.origin;
+})();
 
 const COLORS = [
   { value: "#fffafa", swatch: "#ffd6d6", label: "赤" },
@@ -639,6 +729,9 @@ const form = document.querySelector("#chat-form");
 const messageInput = document.querySelector("#message-input");
 const nameInput = document.querySelector("#name-input");
 const sendButton = document.querySelector("#send-button");
+const attachButton = document.querySelector("#attach-button");
+const mediaInput = document.querySelector("#media-input");
+const uploadStatus = document.querySelector("#upload-status");
 const replyPreview = document.querySelector("#reply-preview");
 const replyPreviewText = document.querySelector("#reply-preview-text");
 const replyCancelButton = document.querySelector("#reply-cancel-button");
@@ -646,11 +739,13 @@ const connectionStatus = document.querySelector("#connection-status");
 const connectionLabel = document.querySelector("#connection-label");
 const participantCount = document.querySelector("#participant-count");
 const lockScreen = document.querySelector("#lock-screen");
+const lockStatus = document.querySelector("#lock-status");
 
 let selectedColor = COLORS[3].value;
 let socket;
 let reconnectDelay = 1000;
 let enteredDigits = "";
+let spaceHeld = false;
 let replyTo = null;
 
 function createColorOptions() {
@@ -732,7 +827,39 @@ function appendMessage(message) {
     replyQuote.textContent = `返信先 ${message.reply.name}: ${message.reply.text}`;
     item.append(replyQuote);
   }
-  item.append(bubble);
+  if (message.text) {
+    item.append(bubble);
+  }
+  if (message.media) {
+    const mediaContainer = document.createElement("div");
+    mediaContainer.className = "message-media";
+    const mediaUrl = new URL(message.media.url, CHAT_HTTP_BASE_URL).href;
+    if (message.media.type === "image") {
+      const link = document.createElement("a");
+      link.href = mediaUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      const image = document.createElement("img");
+      image.src = mediaUrl;
+      image.alt = message.media.name || "送信された画像";
+      link.append(image);
+      mediaContainer.append(link);
+    } else if (message.media.type === "video") {
+      const video = document.createElement("video");
+      video.src = mediaUrl;
+      video.controls = true;
+      video.playsInline = true;
+      video.preload = "metadata";
+      mediaContainer.append(video);
+    }
+    if (message.media.name) {
+      const mediaName = document.createElement("span");
+      mediaName.className = "media-name";
+      mediaName.textContent = message.media.name;
+      mediaContainer.append(mediaName);
+    }
+    item.append(mediaContainer);
+  }
 
   const reactionBar = document.createElement("div");
   reactionBar.className = "message-reactions";
@@ -827,7 +954,119 @@ function setConnected(connected) {
   connectionStatus.classList.toggle("is-disconnected", !connected);
   connectionLabel.textContent = connected ? "オンライン" : "再接続中...";
   sendButton.disabled = !connected;
+  attachButton.disabled = !connected;
 }
+
+function getVideoDuration(file) {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement("video");
+    const objectUrl = URL.createObjectURL(file);
+    video.preload = "metadata";
+    video.onloadedmetadata = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(video.duration);
+    };
+    video.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("動画の長さを確認できませんでした。"));
+    };
+    video.src = objectUrl;
+  });
+}
+
+function uploadFile(file, duration) {
+  return new Promise((resolve, reject) => {
+    const uploadUrl = new URL("/api/uploads", CHAT_HTTP_BASE_URL);
+    uploadUrl.searchParams.set("name", file.name);
+    const request = new XMLHttpRequest();
+    request.open("POST", uploadUrl);
+    request.setRequestHeader("Content-Type", file.type);
+    request.setRequestHeader("X-Owner-Token", ownerToken);
+    if (duration !== null) {
+      request.setRequestHeader("X-Media-Duration", String(duration));
+    }
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        const percentage = Math.round((event.loaded / event.total) * 100);
+        uploadStatus.textContent = `アップロード中... ${percentage}%`;
+      } else {
+        uploadStatus.textContent = "アップロード中...";
+      }
+    };
+    request.onerror = () => reject(new Error("アップロードに失敗しました。接続を確認してください。"));
+    request.onabort = () => reject(new Error("アップロードを中止しました。"));
+    request.onload = () => {
+      let payload;
+      try {
+        payload = JSON.parse(request.responseText);
+      } catch {
+        reject(new Error("サーバーからの応答を読み取れませんでした。"));
+        return;
+      }
+      if (request.status < 200 || request.status >= 300) {
+        reject(new Error(payload.error || "アップロードに失敗しました。"));
+        return;
+      }
+      resolve(payload);
+    };
+    request.send(file);
+  });
+}
+
+attachButton.addEventListener("click", () => mediaInput.click());
+mediaInput.addEventListener("change", async () => {
+  const file = mediaInput.files?.[0];
+  mediaInput.value = "";
+  if (!file) {
+    return;
+  }
+  if (socket?.readyState !== WebSocket.OPEN) {
+    uploadStatus.textContent = "接続してから送信してください。";
+    return;
+  }
+
+  const isImage = file.type.startsWith("image/");
+  const isVideo = file.type.startsWith("video/");
+  const maxSize = isImage ? 20 * 1024 * 1024 : 300 * 1024 * 1024;
+  if ((!isImage && !isVideo) || file.size > maxSize) {
+    uploadStatus.textContent = isImage
+      ? "画像は20MB以下のファイルを選択してください。"
+      : "対応形式の画像・動画を選択してください。動画は300MB以下です。";
+    return;
+  }
+
+  attachButton.disabled = true;
+  try {
+    let duration = null;
+    if (isVideo) {
+      uploadStatus.textContent = "動画の長さを確認中...";
+      duration = await getVideoDuration(file);
+      if (!Number.isFinite(duration) || duration <= 0 || duration > 15 * 60) {
+        throw new Error("動画は15分以内のものを選択してください。");
+      }
+    }
+
+    uploadStatus.textContent = "アップロードを準備中...";
+    const media = await uploadFile(file, duration);
+    if (socket?.readyState !== WebSocket.OPEN) {
+      throw new Error("アップロード中に接続が切れました。もう一度送信してください。");
+    }
+    socket.send(JSON.stringify({
+      type: "message",
+      name: nameInput.value.trim() || "ゲスト",
+      text: "",
+      color: selectedColor,
+      replyToId: replyTo?.id || null,
+      mediaId: media.id,
+    }));
+    clearReply();
+    uploadStatus.textContent = "送信しました。";
+  } catch (error) {
+    uploadStatus.textContent = error.message;
+  } finally {
+    attachButton.disabled = socket?.readyState !== WebSocket.OPEN;
+  }
+});
 
 function connect() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -851,7 +1090,7 @@ function connect() {
 
     if (payload.type === "init") {
       participantCount.textContent = `参加者 ${payload.participants} 人`;
-      setLockState(payload.locked);
+      setLockState(payload.locked, payload.isLockOwner);
       for (const message of payload.messages) {
         appendMessage(message);
       }
@@ -866,7 +1105,7 @@ function connect() {
     } else if (payload.type === "reaction_update") {
       updateReactions(payload);
     } else if (payload.type === "lock_state") {
-      setLockState(payload.locked);
+      setLockState(payload.locked, payload.isLockOwner);
     }
   });
 
@@ -904,14 +1143,19 @@ replyCancelButton.addEventListener("click", clearReply);
 
 document.addEventListener("keydown", (event) => {
   const target = event.target;
-  if (
-    event.isComposing
-    || event.repeat
-    || event.ctrlKey
-    || event.altKey
-    || event.metaKey
-    || (target instanceof Element && target.closest("input, textarea, select, [contenteditable='true']"))
-  ) {
+  const isSpaceKey = event.code === "Space" || event.key === " ";
+
+  if (event.isComposing || event.repeat || event.altKey) {
+    return;
+  }
+
+  if (isSpaceKey) {
+    spaceHeld = true;
+    enteredDigits = "";
+    return;
+  }
+
+  if (!spaceHeld || (target instanceof Element && target.closest("input, textarea, select, [contenteditable='true']"))) {
     enteredDigits = "";
     return;
   }
@@ -933,12 +1177,23 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-function setLockState(locked) {
+document.addEventListener("keyup", (event) => {
+  if (event.code === "Space" || event.key === " ") {
+    spaceHeld = false;
+    enteredDigits = "";
+  }
+});
+
+function setLockState(locked, isLockOwner = false) {
   if (typeof locked !== "boolean") {
     return;
   }
-  lockScreen.hidden = !locked;
-  if (locked) {
+
+  const shouldShowLockScreen = locked && !isLockOwner;
+  lockScreen.hidden = !shouldShowLockScreen;
+  lockStatus.hidden = !isLockOwner;
+
+  if (shouldShowLockScreen) {
     document.activeElement?.blur();
     lockScreen.focus();
   }
