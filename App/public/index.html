@@ -54,6 +54,140 @@ input {
   backdrop-filter: blur(2px);
 }
 
+.chat[hidden] {
+  display: none;
+}
+
+.join-screen[hidden] {
+  display: none;
+}
+
+.join-screen {
+  display: grid;
+  min-height: 100%;
+  place-items: center;
+  padding: 24px;
+  background: #f7faff;
+}
+
+.join-card {
+  width: min(100%, 380px);
+  padding: 32px;
+  border: 1px solid #e8edf5;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 18px 50px rgba(49, 74, 112, 0.1);
+}
+
+.join-card h1 {
+  margin-bottom: 8px;
+  font-size: 20px;
+}
+
+.join-card p {
+  margin: 0 0 24px;
+  color: #85858e;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.join-card label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.join-card input {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 12px;
+  border: 1px solid #dedfe5;
+  border-radius: 10px;
+  outline: none;
+}
+
+.join-card input:focus {
+  border-color: #7aa8e8;
+  box-shadow: 0 0 0 3px rgba(95, 151, 224, 0.14);
+}
+
+.join-button {
+  width: 100%;
+  min-height: 46px;
+  margin-top: 16px;
+  border: 0;
+  border-radius: 10px;
+  background: #4b83d1;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.join-error {
+  min-height: 1.4em;
+  margin-top: 8px;
+  color: #c33f4c;
+  font-size: 12px;
+}
+
+.join-divider {
+  margin: 20px 0 16px;
+  border: 0;
+  border-top: 1px solid #e8edf5;
+}
+
+.create-room-button {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #dfe6f0;
+  border-radius: 10px;
+  background: #fff;
+  color: #4b6383;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.room-code-label {
+  color: #777984;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.creator-notice {
+  margin: 12px 30px 0;
+  padding: 10px 14px;
+  border: 1px solid #f0dfab;
+  border-radius: 10px;
+  background: #fffaf0;
+  color: #77612c;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.creator-command-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.disband-room-button {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #c62828;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.disband-room-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .lock-screen {
   position: fixed;
   z-index: 10;
@@ -619,7 +753,26 @@ h1 {
     </style>
   </head>
   <body>
-    <main class="chat">
+    <section class="join-screen" id="join-screen">
+      <form class="join-card" id="join-form">
+        <h1>チャットに参加</h1>
+        <p>参加コードを入力すると、そのコードの部屋に入れます。</p>
+        <label for="room-code-input">参加コード（1〜50）</label>
+        <input
+          id="room-code-input"
+          name="roomCode"
+          inputmode="numeric"
+          autocomplete="off"
+          placeholder="例: 01"
+          autofocus
+        >
+        <button class="join-button" type="submit">参加する</button>
+        <div class="join-error" id="join-error" aria-live="polite"></div>
+        <hr class="join-divider">
+        <button class="create-room-button" id="create-room-button" type="button">部屋を作成</button>
+      </form>
+    </section>
+    <main class="chat" id="chat" hidden>
       <header class="chat-header">
         <div class="brand">
           <img class="brand-mark" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzNyIgaGVpZ2h0PSIzNiIgdmlld0JveD0iNTUgNTYgMzcgMzYiPgogIDxpbWFnZSBocmVmPSJkYXRhOmltYWdlL3BuZztiYXNlNjQsaVZCT1J3MEtHZ29BQUFBTlNVaEVVZ0FBQUhnQUFBQjRDQVlBQUFBNVpEYlNBQUFCWTJsRFExQnJRMGREYjJ4dmNsTndZV05sUkdsemNHeGhlVkF6QUFBb2tYMlFzVXZEVUJER3YxYWxvSFVRSFJ3Y01vbERsSklLdWppMEZVUnhDRlhCNnBTK3BxbVF4a2VTSWdVMy80R0MvNEVLem00V2h6bzZPQWlpaytqbTVLVGdvdVY1TDRta0lucVA0MzU4Nzd2ak9DQTVibkJ1OXdPb083NWJYTW9ybTZVdEpmV01CTDBnRE9ieG5LNnZTdjZ1UCtQOVB2VGVUc3Radi8vL2pjR0s2VEdxbjVRWnhsMGZTS2pFK3A3UEplOFRqN20wRkhGTHNoWHlpZVJ5eU9lQlo3MVlJTDRtVmxqTnFCQy9FS3ZsSHQzcTRicmRZTkVPY3Z1MDZXeXN5VG1VRTFqRURqeHcyRERRaEFJZDJULzhzNEcvZ0YxeU4rRlNuNFVhZk9ySmtTSW5tTVRMY01Bd0E1VllRNFpTazNlTzduY1gzVStOdFlNbllLRWpoTGlJdFpVT2NEWkhKMnZIMnRROE1ESUVYTFc1NFJxQjFFZVpyRmFCMTFOZ3VBU00zbERQdGxmTmF1SDI2VHd3OENqRTJ5U1FPZ1M2TFNFK2pvVG9IbFB6QTNEcGZBRURwMklUcEpZT1d3QUFBQVJqU1VOUURBMEFBVzRENCs4QUFBQjRaVmhKWmsxTkFDb0FBQUFJQUFVQkVnQURBQUFBQVFBQkFBQUJHZ0FGQUFBQUFRQUFBRW9CR3dBRkFBQUFBUUFBQUZJQktBQURBQUFBQVFBQ0FBQ0hhUUFFQUFBQUFRQUFBRm9BQUFBQUFBQUFTQUFBQUFFQUFBQklBQUFBQVFBQ29BSUFCQUFBQUFFQUFBQjRvQU1BQkFBQUFBRUFBQUI0QUFBQUFMUVFzRjhBQUFBSmNFaFpjd0FBQ3hNQUFBc1RBUUNhbkJnQUFBQWNhVVJQVkFBQUFBSUFBQUFBQUFBQVBBQUFBQ2dBQUFBOEFBQUFQQUFBQi80dWQxdGVBQUFIeWtsRVFWUjRBZXpkeVZMak9oUUc0THovRTNVdjdtVnpWNzNwZlUvTXpaUUFJUkF5QUxyNkkwNGthenlTNWVDRVVLV1NuWmpFclkvL1NEWlVlckJjQ3JGdjhURVE3MStQanpOeGRYVzdidGZYdCtMNitzNXBOemYzd203RDRiMFlEc2ZNNW40L1hzLzNYamdIODV6RzR5YzYzWlhyWUkvTHc1M05YaG9EcVhEN0J3enNwNmY1R25rUEhLbGdORXFMeFdzREY0TVlUdStkazE2a2o1OWVsWEs3QXFoOXQxclFENXFaWW14UHAvSWZKci8yd0FGZ3dsMHUzMVpnOWdEbUFPZVZaeXJqdmpMdEE4Wmp6VEt0ZmdEdnhHejJ1Z2YyVFZHRSsvSWl4R2owRUVodisvSThHbzNsNnhPbzNmdUF3L093RHhtcDN5ZllTckNMT3dvQXUybTZ1Y2tyejNIZ3NiZlU0ejA0aXkxVmNVWjdZRFBCaEl1eXJKTHI0cXJ5RjBxdkN4d3J6eWxnZks4N0YrY0EzKzZCQVl4U1RGOVlVQ0VsVjFmQWRZRnBVZU5Ma1l1QnhaVi9nYVZ3SDFZL1NGMlc2VTlmb3QvZWlGYUk1K2VsdUx3Y3Jab1BOemU5QUErdG5ubkE3Y3YwcHdVMlUvdjZLZ1J1WWpSeHUwc3YwTG5BL2pMTlgyeDlTbUF6dFNqSm1HOVR1R1hwOVNlNGlWdFdwcm1MclU4RmJNSWl3V1pxbThDKzYwci93Z3B6Y2M3YzY2WTNCWXpMSjk5aUs1VGk1blh4emdPai9KcGYySjlPRjZ0TERVS2xQajd2K29IRGwwWTU2VlhJb2ZrNkJCeExNVjBYN3lRd0VNMjBBaGlKblU3blhsZ0FoMWJOc2RKY0w3M2RwWGduZ0gyZ1FBWHlmUDRpeHVQcGVvNmx0SnA5T1c1SmVTWk1mMTh2eGFwVTl4NFl5UU5nQ0JHUTZ5OEppdU5uczJVU2xZRFR1SFZLYzNqdXRhSHRXNWJtdm44dWpwWHF3WHB3dG13RDRMampCRXdzbG01dkp6S2x3L2Vtcm1VSk1kU1g0b1pLczdydTljKzlDdGpHOU8yYm9QWjJDRGk4NE5vb01Fb21OVW9sRW9jR0xEUmN0c3pucnhMdVpiVVl3dTgySjVObmNYLy9KQkVmM3VkUWdyUjdIaXpBMitHV2xHWmMrL3BBZlkvWnNPWitDTmwvQzNOd2NURVVIOWwwNm13c3pqNGZsRkljZzlVTEtuOVpWc25OeCtXblYyT0g1K0xRM1MzQXU4aURkZ1BNUWFoeFRENGtnWnA5VjdqcDB1eFBMeXBTT05WbWF1M3RVSXBkWkFsY1ovRDYvRG9hMXIzOWlOUzJTVzRwTG1BQjNEWHlUZ056WURtNHBZdXEyTXBaNFU1V2k4TXdzcDFjZXorY1pKd3oyczRCTjFIRGllVW1ONGFyMG1zUHV0NzMzM05XWlprSGpHUDE2L25tWlp4RHFPMEVzQXRLSzJUM2ZqS2hjbE9ieG8xZEV2bm5YVjJhS2IzVWR6RWZ5ei9aNmV2Y0dZWWpRTHVQZytiaWh1NHhVMXBDdjhpbmxNWFRTNmpOdm16QmhZU0hVenpJSDBoN1lEZTV6MGMwUVdrNzl0Y1lTQ3UxYm5HeHNHckM2djNTRkllUkpYQzdRZXY3OTJ2VThMVXR3YXFTN0wvT3JaUGNHQzZoMTBYZVdlQmMySDdnMWtmZUdlQW1LTkxLU3l3SEZ1bHRNK2VHRjFZRWF2ZXhGT081K01yYW5KTzNDdGlQU0poOFVDckphcTZObCtUTjR4SjJIZVJCZXRETUFlekx0bDRRRVZadW4xcEljV0JqTnpKb1JkeTgzaVU4YnQ4V2VTd2tjUHZCMnBiWDRDWjJVN2gzZHhPQnBsZlJ2dTEyeUo4Q21KTldvR3JZOEEwTXpuVXVkODdsQVFPOUhIa25nWE9TU3JBYU43V0FzZittMlIxOFRsbFd1STh5d1dpKzVOcVB1ZTlEMDREcS9lZTk5Y0FhTTcxWU1qSE43ZFFLbVZKYmE4NXQ0bmFMM0V2Z0pocmc3QmErTldmQ3BiWnpZTHZGN1E1NTRBNmVQWmh0OXV0QXBLQnlueStERGYveUlHL09KY3hRYjVkbTMzNjZYTk8xc2dUdUowTHQ4MUtvNmNXVFdZNDVxYTJMUytnK1ZQdXhGREtlbDVkSlAzNGNpdHJ0NTg5RDBYMDdrdS9SdnYzNmRTUjBPNWJiNmZiNzk3RlE3VVQyNGZibno0bFE3VlQySlUxOWYrdzkxSFBxZkh6blB1Z2VJb1hkSHFrRVdxTUNPSTJLWXpRc3RzT3dlSzQ5THYxQTVDSGpITTEvandUK21BSCtpUGR0b3ZKaG03aHgyTHE0dWNnNHQyYWFkeHJZQmMxRGJjS21VNXVMZTNoNEt0QjQ1WnViWkkwTTdKMEI5bVBTL05vc1cyWUpDMjFURWxTZmsxcEFwTkVJbDNyTzkraXluejRmTllWc0NYQWNqeENwejhjMGtYTmhtNmt0dyswU2VaQTNlRFNJSDkyM1F6UkJhYnNFdGozdW1TelJhS3BVbzYrZDVBOEVybzlFV055K2ljcWJZMVhwVS9PaExwazhHQk5Td1JKd0NUTGVVNThIblpmZFMrQ1BIMmo3SEw1OSt5N1E3TWRyN0x1b2ViQWxxVVVxNDdnRXJZL2pKVG1OM0V2Z2c0UC9CRnAzb1Btb3BiQjgzRGJJWWVoZUFuLzU4bzlBeXdYMnB4T1laYUJVN3N4U3FMWkxTakxTU1lpcHZpVEpmdVN0QW80REVtUTdURUoxRTh0YklWTnA1WlhrN3FFM0Nzd0ZvZ1RIaitkZUMrWWZWNXJZdXJpRTN5N05nL2dnbXFuWXhMYkMwTUQ1T0dZQ2M3WmQxTHpFdW5OdFRra216RkJmaW53cUpQRG1CcEg3WGwrLy9pdlF1TWVYSGxjRHRadlUrcUExTXY5NnViZkFCeEw0b0Rxd0h6US9xWVRhYldwOXlIaE1RNXZuRWRydWFZTHJBSWRCMjZIU1lKcUR6VjhoaCtCeUh0ZklxVFJ2UFhBY0VaRFVlSmMyaEJmcm03QVk3QnljbXNlbW9Yc05ySEVJaWRzM01ZK1AvOHJQNFJqS1AwOGR5OC9VZXBMLzdjeFVma1RUcy94ODZGbVZOcHZONWNjK3pWZXZoZGZGNjkvZjR5T2ZSdUxrNUdJRFB3Qmg2RUg1SUhJSE8vODR6TDlvOFhOcklvWVNkM1oydVJyc1dwam02eEJzckIrUEorTDgvTXFMZkhSMEp0RHFWQUEvY28rQU5aZ0cxbytGQUdPUEh4K2Z5NDgwZk1oT3FRS2J5UTlrVzhnUFoxdXUyb3Y4dERacWVBelBvY1Z3NmJtSGg0bE04dDgxSk1IYWZSZlFFcmpkSUhieC9iV0FVWmJOeEtXMkFRSzB4V0lwRy9yRkdoVzRyL0xqK2N5RzQ3aklLTmNBMUtqbmN0dHNOZE9NcXFBUy9UOEFBQUQvLzNKSHo0UUFBQTBQU1VSQlZPMmFDWERUVlI3SG82TXpIak5lZ0NpNmlqTWVvQ2k2NDYwem5DT3NvMmlMbk1vbFdFREIxVlZYMXlKWGRYRjFjZHlWVmRBRjBVR1Fxd1V0SUMxM1FaQ2xRSUZ5dFZBNkxZY2s2WkUwU1p1MC92WjlmK2w3ZVVtVE5HMlNUaHYvekR6ZS9aSyt6Ly83KzczZis4ZDA4bVFKdGJhMGZ2MW1Rb3IyZTFWVTJNamxxbTQwVlZmWGtOdnRKby9IUTdXMXRRMVNYVjBkaFVvWVgxUGpKcXdSTGxWVzJ1blVxZEw2ZEZya3daSzN2NmlvbEdLVlRORnVZanptWjJWdEpxUm8xN2JiSFJIQzlUU0Fxd090cWJLUUxYOHBWZTc3aXV5SFY1Szd5dW9IM09NQjVQQ0FxNnFjSWFBR2dwWVBRV3dnK3dIKy9QTjU5UDc3cytqcnI3K05lbk9qZ1JNTHdFVkZKZVIwdWhvRkREQlN0WUNLY25WWkVka09MS0tLLy8yYktuTG5rU1Z6TEpsWERDYno4b0djVzlhT0orZXZoL3dnd3dLRVV6RDZncXMyRUxDc2gxZnpuajM3YWZIaXBiUjhlVVpZdGZzQmZ1U1J4OGhrTWxGUzBzQTJBUmdRd3lXWEt6eGdRTkdWV3V1cHByTHRzK2o4MG1jYnBtV2lUVXZtakdGVTY2bFI4OTF1VDFEQU1OL2UxRlRBQUIxYXpZc1dmYytzYnIzMXRnYUFwMDZkUWUrKyt4NGhOMDJZOERMSmRNc3R0L0NrYnQzdVZtMnlUK2JqeDAra3NXTmZvaUZEaGxGbTVrOXhlUkNrZ3NQQkM5L25OVytCL2pkUVlUcGd0OE5DMXF3My9NSHFRTk9Ia0NWckVwa3podGFEVGlaYjNrSUZtSlVmNElkOWNMMlFtNlpncVdRZmFOMHZaMlQ4d0t6dXZQT3VCb0R2dUtNTDkwR3NJdkYvZWtQRTVRVUx2Z21yb1BBUVFxc3ZNc0NOKzZoQW9Ib2RtNityRi82VmxTdWdtZ1ZNNjhhL1V2blBIMUw1dGhsc21zdTJwSkxiVVVibE9kUHFBU2RSeGM1L3FEVjB3SUZnWmIzNWdFL1QyclZaOU9XWDh3bDdEaGM2WmNvMDVuVFRUVGR6SGUxejUzNUZtemZuME4xMzM4TjlZOGFNSmRPSEgzNU1Na0c1QVA3WVk0K3JOdGtuODFtelBxSzB0QStFQ1poQ216Ymx4QUZ3S1Ird0FGbC9ZcHRUMW9FR2xuRmlsb0JyS2tySXN2NFZCbWRlbmt4bDIyYXlIM2E3N09TcE1wUHQ2R3BXSzB4eXhZNzNnd0xHV2hKa3FEd2F3Sk1tdlJxUjhENzZhRFoxNzM0dmoxMnlaRG1aOUkzcjErOVAzUEhpaStPaTNseDkzYWFXZlFwdVhLWGgxZzZFcXRlaE9BbTRxbUF0bVZjTlozQ1dIMGVSeTN5VWFtem55SGJ3VzZxMm5TV1BXNFJSNGlSZDY2NFdnTk44Z0hmOWs5ZjQ3YmZmeE9Fc3ZvQS8vdmdUNnQvL1NSb3c0QmxPRjExMGtRTCs0SU1QMGROUEQ2RGV2ZnZTd29XTEZPQWJicmlSVEQxNjlDS1oycmZ2d0pOdXZQRVBxazMyK2ZLZXJIQXNHbTV6bytsckNjQVNMbkxiZ1cvRTZYaVFGL0RhbHdUUWFySWZYQ1JNODNOc25qMk9DdTlKMisyaWl1MHpGZURLM1o4UzRDSjVReVY1b0FxZVI2TmdmZTdzMlo4cXVMQzQ5OXpUblk0ZkwxSThwSUl2dSt3eWpHdWVENzd5eWl2Vmd0SEFERGEzcFFGWDVuNGhvQ1Y3QWE5TEVUQTlBdm9DVVUvaU52UHFrZUxFTEM1Q2Fod0NNSHl5OE5QTGs4aTJaNDRDSEc4VExRSHYzNTlQN2RxMW80c3Z2cGdoWDNIRkZad1BIanhVOENqaGs3Y0V6Q1lhemh1bjRkdHV1NTBId2crdldiT2VuWHA2K21yT01VYW05OTZienVPdXZ2cnFOZ3NZcDJ0ZHdaVzVjeFJNeS9ySnJGWmIzbjhaTGtJamhFVFY1dzlTclFCY25qUGRCM2p2dkJZSFBHalFFTjcvb1VPSGMvN0VFLzJvVjY4K1hPN1JveWZsNWg1UUp2cWRkMUxKVkZoWVRPUEdwZkFBbU9nZE8zWXp1SjA3OXhEcXZYdjNvWXlNMVFvbVRuSlFmVnRXY0ZqQVdhOHlZTHNBN0ZVcTFKcE1GYi9NSm8rem5NcTNUcWx2VDJZekxrMTBTeWc0SmVWbDN2dk9uVHZ6QlFjNHdGWGkwZ051RmZWQmd3WXJ3R3lkTzNYcXhCMVhYWFVWclZ1WHhTQ1BIQ21rKys5L2dOdmJ0V3N2N29VM05BQjg0WVVYY2d3Y3pNUkcyNWFkdllXUW9sMUhQMVFGbHYwVXZHOGVRd1JRcXpEUmRjSkVPMDZzSTh1cTV4Vmt5Nm9SVkw3cGJkVm1XVEdRcXN0UHRaaUNwUWh4dU1MdDFhcFZtY3pudnZ2K3lEZGtFT1R0dDk4aEJQcUxBZ3pZQXJMWEJ6L3pUQklWRnA2aS9Qemo5T2lqai9QazY2NjdUb1JDVzZtZ29JaW1UMCtqUTRlTzBzR0RSd1R3alp4d0hSa3RoR0R6NHcwWXQwNEFMTlZuRjZkbGl6aGtNZURNTWVRdVB5bE96Qzd5T0t6a3RwOGp4L2w4MFNldUtkbjNRdEZlVmRzUExGUnJZQzJzR3lwRVFydjBvMDNOOSswN1JCMDdkbVFtT0UxamZpQmd0T0dnaGR6UEI0OFlNWW91dU9BQ25nelZQdkRBZzF5R0dkaTJiUWNESEREZ1dXNjc5OTc3S0M4dlB5NVFkZEROQWF4ZjY4bXlybHA5NHhFaVNialY1bnl5Q3Ivcmc1ZEUxdXpYeEYxem5naU56b3M0MkNJZUJtOUk1VGp4azFEd0NEWFdtdjJxT0hoVnFiVWFDNVdhQ2xZZlAzLytRbnI5OVRmVVF5SnZzZ0JUSDRkeTE2NWRtUmV6eE1aKzk5MVM5WVJBMFhEYUJ3NGNVU0R4Qk1sTEVFek96YzFUZlRxWVdKVURBVXRna2VXK0t6NGRxbDdXMWVzOHRaRXM2VU1WdElvZEh6QmdDZHlTOFR3NWk3Y1FIb1E2Y2RIaE9MbUJMQm5EZVR6bTJZK3NVSUFiODhPQklLS3BMMW15akNGMjZkSzFBZUNiYis3TWZXeWRKMDkralZKU0p0TGxsMS9PamNqeHNnR0JjOSsrZmVuaGh4OGgzSGQyNkhDdG1vUzQ2L0RoZ21aQmpnU1NCQng2ckE5aXVFM1NvZXBsUDhEd3RTc1E3M3BOTDlUcUxONHM2a21xRFgzV05lUElkV1kzUTdhdVRhbnZHMGkyL1Y4cHdMQUsrdWNFbHNOOTE2YjJiZHk0bGQ1ODgyM2hPbWNxd0FpaDRHcjc5T2tyemxQWjRoeXpHY3dhajRQaDJIR2loaFBINlJsemNHdHk0a1N4V056M3hpTzZzZythRDdDdnJha2JnUEdCR3l6ci9vREZMWmJtWHdIWVZaS2pmTElFajl3dVltUDBXOWVOcndjc1l1RzkvMmxSd045L3YwSUljZ0xsNU94a3NCQWZZdUhVMUttVW52NkRFaW9PWmRnRDA0d1phWVQ3eTg4KyswTDVYNWpvckt4TkhETGh2aGxQaHR4Z0xDS0JvMCsyeHpLUE4yRGRCenNMMXdoWXlVcVJnRjhyL0dxbGVCZXNxOWdpWW1ISDhkWDhpdEJQd1hueld4VHc2TkV2c3NBUUIyUFA3N3FyRzlkeENFWjkyYkowdXZUU1M3bU40K0JodzRhenYwVW43am1oVHBobzFBRVo5NW5YWDM4OXdlYWpEUWtQdzY1ZHVhb3UyMk9WeHhPdzl4V2g5M29SSnRWWm1La0FXOWVrTUN4QVJyTHRtMHVXSDBjTHhVNmdxcU1aSEIrN3p1MGp5dzhqK1lId1FsK2xBTmZWeGRkRUZ4U2NFcmRZN1prUkRsM1k3NGNlZXBqcmFXbC9WencrK2VSZjNIYk5OZGVRQ2ZKZXVYSTFkMHJBeWNuUGNSMDNYSjA2M2NDRGNkS0dyMGFNSEN1UW9kYUpMMkNFU01FQmwyMzRDOFB5dUNySVhWbktMeGNRRXlQaHRBeTQxdXcvMTZ2OVdTcmI4QVpockR5UngvTVVqYjJhTm0wbXM4QlZKVUphdE9HTUJGSHFnTkgrMWx2dmlDam9aekpCcFhLakF3R2pmZS9lZzlTelp5OWVCQXZoUW1UU3BNbTBlL2RlTlUvT2oxVWVYOEI0RHh3Y01NSWxWblh4VmlvVGx4cTIvTVZrRjhxMUgwMm5TbkdZZ3BLbFQ3YXNIQ3hPMU5rS0xoUWZyemdZK3dxZlcvL3l3Qzlja29DblRwMGVsSWRKaHlJQlN4TXQreEQrekp6NUFjTUZaQ1RJSCtHVEhCUExQSjZBY2RBQ0RLazYzUWNqN1BHNGJGUjFMRjJCbEVEMW5PRVcvS2pXd0ZyaDFBdndTTkhza2J4N3Z2YmFqdUl5NnBoYUN5ZG15UU9XZDlTb01ZUVgvUys4TUpKZHJSL2cvdjI5NzRPZmVtcUFXa0QvVW9pTkowNThoUzY1NUJMeDY0SUZRY2ZvNDV0YmJsSEFIQWNQVTBDdDRpN2FtamxhMVhXd0tGdC9ta2l1MDd2WWJNdUhCSzhLZzZsWGdwVjVjL2NEODQ0ZE8wbTRsTUlQSS9WMTVzeVpxOTRzU2ZINTVmcmdmdjM2ODRYSGswOCs1YmVJUGdabC9WUWQyQmVMZXV3QTF3UU5sUUJFd3FteG5hYXlyYWtoZ0NhTG02c1grS0JWdHVWdjVCQVBBM3l4YmdGUTF0OEZTNWdOYy8rcnl1TGlNeVJUdEh1R0F5OWVBc0hLSWx4S1RmWCs0QTUrMlUvQjBYNVFyT2JIQ2pDdUttWHNxK2Y0dVk0RWpOeDFiaThmbUN6NFlaMjQ5SUFKdHE1NWlaeG5jdjFnNm5Oa1djSnRDTlJybG1VN1BoLzdJNkVHeTJPMWYvbzZDUTNZNFhBRkJZek5ocytVa0pDNzdXYzVGTUxObFAzd1Vxb3BPeUhnK3BTdWo0VnFrUkJQUzRDTjVVNW5kVmk0T25BZFVMVGxoQVpzczFXRkJBd2crb1dIRGpCWTJRY1ZZTDFtdVRHb2VyL2Q3b2dZc0lRZExWek1UMmpBWm5OWlNNQlFNUURBeEFKZU1LaXlEUThDeG5tVHYrblZJWVlyV3l6bFRRWWNDOUN0RXZDR0RWc0pLZG9udUtUa0xObnRvVlVzL1RMQVFKVUFqWDhBNnpYQjN0ZzJITGhJK3FxcUhGUmFlcTdaZ0tNQm5kQ0E4WUNjT1hPZUdqUFZrVUJxN2hpWTVyTm56VkhEbFpDUk4rWEJUM2pBMkl5U2tuTUVjdzNRK0QyV1BGMDNGMXFvZWJBSVdCdWZnYytDV1M0dC9UV21jSFhRa2NEK1hRQnV5aE1mT0Rad1ExdHpQZkM3bzI0QUZwdWdiMHhyQmhqcGQ5UC9udDgxNEVnM3JDMlArOTBBYnN1UW92bnVDUWM0bXMxSXhMbHREbkFpUW9qbjM5UXFBQWYrZ2ZLaUk3RGRxUHZlUUVXNkY2WklCN2JrT0FOdzAwR0c0dE1xQVcvZi9nc2hoZnJTUm52a0QwQ3JCR3dBakJ4Z1kzdGxBTlorV2RIWVpyWEZmZ093QVRoMjVxSXRLcUN0ZjJkRHdZYUNEUVczWlJVYkNqWVViQ2pZVUhDQ3E2Qk5BN2JaWE9MbkpVWksxRDB3SmVvZlp2eGRYdEVhZ0JQY2VobUFEY0NHZjI3TDV0NVFzS0ZnUThHR2doTmNCUVpnQTNDcnZVc3dmSENDUDV6L0IxTFRrQkNKdDdncUFBQUFBRWxGVGtTdVFtQ0MiIHdpZHRoPSIxMjAiIGhlaWdodD0iMTIwIiAvPgo8L3N2Zz4K" alt="">
@@ -635,8 +788,16 @@ h1 {
             <span id="connection-label">接続中...</span>
           </span>
           <span class="participant-count" id="participant-count">参加者 -- 人</span>
+          <span class="room-code-label" id="active-room-code"></span>
         </div>
       </header>
+
+      <div class="creator-notice" id="creator-notice" hidden>
+        <div class="creator-command-bar">
+          <span id="creator-command-text" role="status" aria-live="polite"></span>
+          <button class="disband-room-button" id="disband-room-button" type="button">解散</button>
+        </div>
+      </div>
 
       <section class="conversation" aria-label="チャットメッセージ" aria-live="polite">
         <div class="messages" id="messages">
@@ -705,6 +866,9 @@ const CHAT_HTTP_BASE_URL = (() => {
   url.protocol = url.protocol === "wss:" ? "https:" : "http:";
   return url.origin;
 })();
+const ROOM_CODE_PATTERN = /^(0[1-9]|[1-4][0-9]|50)$/;
+const ROOM_CODE_INPUT_PATTERN = /^(0?[1-9]|[1-4][0-9]|50)$/;
+const ROOM_INIT_TIMEOUT_MS = 5000;
 
 const COLORS = [
   { value: "#fffafa", swatch: "#ffd6d6", label: "赤" },
@@ -723,6 +887,15 @@ if (!OWNER_TOKEN_PATTERN.test(ownerToken || "")) {
 }
 
 const messagesElement = document.querySelector("#messages");
+const joinScreen = document.querySelector("#join-screen");
+const joinForm = document.querySelector("#join-form");
+const roomCodeInput = document.querySelector("#room-code-input");
+const joinError = document.querySelector("#join-error");
+const createRoomButton = document.querySelector("#create-room-button");
+const chatElement = document.querySelector("#chat");
+const creatorNotice = document.querySelector("#creator-notice");
+const creatorCommandText = document.querySelector("#creator-command-text");
+const disbandRoomButton = document.querySelector("#disband-room-button");
 const emptyState = document.querySelector("#empty-state");
 const colorOptions = document.querySelector("#color-options");
 const form = document.querySelector("#chat-form");
@@ -738,13 +911,17 @@ const replyCancelButton = document.querySelector("#reply-cancel-button");
 const connectionStatus = document.querySelector("#connection-status");
 const connectionLabel = document.querySelector("#connection-label");
 const participantCount = document.querySelector("#participant-count");
+const activeRoomCode = document.querySelector("#active-room-code");
 const lockScreen = document.querySelector("#lock-screen");
 const lockStatus = document.querySelector("#lock-status");
 
 let selectedColor = COLORS[3].value;
 let socket;
+let roomCode = "";
+let roomCommandLetters = "";
+let hasJoinedRoom = false;
 let reconnectDelay = 1000;
-let enteredDigits = "";
+let enteredCommand = "";
 let spaceHeld = false;
 let replyTo = null;
 
@@ -955,6 +1132,7 @@ function setConnected(connected) {
   connectionLabel.textContent = connected ? "オンライン" : "再接続中...";
   sendButton.disabled = !connected;
   attachButton.disabled = !connected;
+  disbandRoomButton.disabled = !connected;
 }
 
 function getVideoDuration(file) {
@@ -978,6 +1156,7 @@ function uploadFile(file, duration) {
   return new Promise((resolve, reject) => {
     const uploadUrl = new URL("/api/uploads", CHAT_HTTP_BASE_URL);
     uploadUrl.searchParams.set("name", file.name);
+    uploadUrl.searchParams.set("room", roomCode);
     const request = new XMLHttpRequest();
     request.open("POST", uploadUrl);
     request.setRequestHeader("Content-Type", file.type);
@@ -1069,18 +1248,33 @@ mediaInput.addEventListener("change", async () => {
 });
 
 function connect() {
+  if (!roomCode) {
+    return;
+  }
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const socketUrl = window.CHAT_WEBSOCKET_URL || `${protocol}//${window.location.host}/ws`;
-  socket = new WebSocket(socketUrl);
+  const socketUrl = new URL(window.CHAT_WEBSOCKET_URL || `${protocol}//${window.location.host}/ws`);
+  socketUrl.searchParams.set("room", roomCode);
+  const currentSocket = new WebSocket(socketUrl.toString());
+  socket = currentSocket;
+  let roomNotFound = false;
+  let roomDisbanded = false;
+  let initTimedOut = false;
+  let initTimeout;
   setConnected(false);
 
-  socket.addEventListener("open", () => {
+  currentSocket.addEventListener("open", () => {
     reconnectDelay = 1000;
-    socket.send(JSON.stringify({ type: "identify", token: ownerToken }));
-    setConnected(true);
+    currentSocket.send(JSON.stringify({ type: "identify", token: ownerToken }));
+    initTimeout = window.setTimeout(() => {
+      if (!hasJoinedRoom && currentSocket.readyState === WebSocket.OPEN) {
+        initTimedOut = true;
+        joinError.textContent = "サーバーから部屋の応答がありません。接続を再試行しています。";
+        currentSocket.close();
+      }
+    }, ROOM_INIT_TIMEOUT_MS);
   });
 
-  socket.addEventListener("message", (event) => {
+  currentSocket.addEventListener("message", (event) => {
     let payload;
     try {
       payload = JSON.parse(event.data);
@@ -1088,7 +1282,38 @@ function connect() {
       return;
     }
 
-    if (payload.type === "init") {
+    if (payload.type === "room_not_found") {
+      window.clearTimeout(initTimeout);
+      roomNotFound = true;
+      hasJoinedRoom = false;
+      roomCode = "";
+      roomCommandLetters = "";
+      activeRoomCode.textContent = "";
+      creatorNotice.hidden = true;
+      creatorCommandText.textContent = "";
+      joinError.textContent = "その部屋はありません。コードを確認するか、新しい部屋を作成してください。";
+      joinScreen.hidden = false;
+      chatElement.hidden = true;
+    } else if (payload.type === "room_disbanded") {
+      roomDisbanded = true;
+      hasJoinedRoom = false;
+      roomCode = "";
+      roomCommandLetters = "";
+      roomCodeInput.value = "";
+      activeRoomCode.textContent = "";
+      creatorNotice.hidden = true;
+      creatorCommandText.textContent = "";
+      clearMessages();
+      joinError.textContent = "この部屋は解散されました。";
+      joinScreen.hidden = false;
+      chatElement.hidden = true;
+    } else if (payload.type === "init") {
+      window.clearTimeout(initTimeout);
+      hasJoinedRoom = true;
+      joinError.textContent = "";
+      joinScreen.hidden = true;
+      chatElement.hidden = false;
+      setConnected(true);
       participantCount.textContent = `参加者 ${payload.participants} 人`;
       setLockState(payload.locked, payload.isLockOwner);
       for (const message of payload.messages) {
@@ -1109,14 +1334,24 @@ function connect() {
     }
   });
 
-  socket.addEventListener("close", () => {
+  currentSocket.addEventListener("close", () => {
+    window.clearTimeout(initTimeout);
+    if (socket !== currentSocket) {
+      return;
+    }
     setConnected(false);
+    if (roomNotFound || roomDisbanded) {
+      return;
+    }
+    if (!hasJoinedRoom && !initTimedOut) {
+      joinError.textContent = "サーバーに接続できません。接続を再試行しています。";
+    }
     window.setTimeout(connect, reconnectDelay);
     reconnectDelay = Math.min(reconnectDelay * 2, 10000);
   });
 
-  socket.addEventListener("error", () => {
-    socket.close();
+  currentSocket.addEventListener("error", () => {
+    currentSocket.close();
   });
 }
 
@@ -1151,36 +1386,49 @@ document.addEventListener("keydown", (event) => {
 
   if (isSpaceKey) {
     spaceHeld = true;
-    enteredDigits = "";
+    enteredCommand = "";
     return;
   }
 
-  if (!spaceHeld || (target instanceof Element && target.closest("input, textarea, select, [contenteditable='true']"))) {
-    enteredDigits = "";
+  if (
+    !spaceHeld
+    || !roomCommandLetters
+    || (target instanceof Element && target.closest("input, textarea, select, [contenteditable='true']"))
+  ) {
+    enteredCommand = "";
     return;
   }
 
-  if (!/^\d$/.test(event.key)) {
-    enteredDigits = "";
+  const key = event.key.toUpperCase();
+  if (!/^[A-Z0-9]$/.test(key)) {
+    enteredCommand = "";
     return;
   }
 
-  enteredDigits = `${enteredDigits}${event.key}`.slice(-4);
-  if (enteredDigits === "6780" || enteredDigits === "8880") {
-    const type = enteredDigits === "6780" ? "admin_lock" : "reset_chat";
-    enteredDigits = "";
-    if (socket?.readyState !== WebSocket.OPEN) {
-      return;
+  const commands = [
+    { code: `6780${roomCommandLetters}`, type: "admin_lock" },
+    { code: `8880${roomCommandLetters}`, type: "reset_chat" },
+  ];
+  const nextCommand = `${enteredCommand}${key}`;
+  if (!commands.some(({ code }) => code.startsWith(nextCommand))) {
+    enteredCommand = commands.some(({ code }) => code.startsWith(key)) ? key : "";
+    return;
+  }
+
+  enteredCommand = nextCommand;
+  const command = commands.find(({ code }) => code === enteredCommand);
+  if (command) {
+    enteredCommand = "";
+    if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: command.type, commandLetters: roomCommandLetters }));
     }
-
-    socket.send(JSON.stringify({ type }));
   }
 });
 
 document.addEventListener("keyup", (event) => {
   if (event.code === "Space" || event.key === " ") {
     spaceHeld = false;
-    enteredDigits = "";
+    enteredCommand = "";
   }
 });
 
@@ -1200,7 +1448,66 @@ function setLockState(locked, isLockOwner = false) {
 }
 
 createColorOptions();
-connect();
+disbandRoomButton.addEventListener("click", () => {
+  if (!roomCommandLetters || socket?.readyState !== WebSocket.OPEN) {
+    return;
+  }
+  if (!window.confirm("この部屋を解散すると、参加者全員が退出し、履歴も削除されます。よろしいですか？")) {
+    return;
+  }
+
+  disbandRoomButton.disabled = true;
+  socket.send(JSON.stringify({ type: "disband_room", commandLetters: roomCommandLetters }));
+});
+
+createRoomButton.addEventListener("click", async () => {
+  createRoomButton.disabled = true;
+  try {
+    const response = await fetch(new URL("/api/rooms", CHAT_HTTP_BASE_URL), {
+      method: "POST",
+      headers: { "X-Owner-Token": ownerToken },
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.error || "部屋を作成できませんでした。");
+    }
+    if (!ROOM_CODE_PATTERN.test(result.code) || !/^[A-Z]{2}$/.test(result.commandLetters)) {
+      throw new Error("部屋の作成結果が正しくありません。");
+    }
+
+    roomCodeInput.value = result.code;
+    roomCommandLetters = result.commandLetters;
+    joinError.textContent = "";
+    joinForm.requestSubmit();
+  } catch (error) {
+    joinError.textContent = error instanceof Error ? error.message : String(error);
+  } finally {
+    createRoomButton.disabled = false;
+  }
+});
+
+joinForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const enteredRoomCode = roomCodeInput.value.trim();
+  if (!ROOM_CODE_INPUT_PATTERN.test(enteredRoomCode)) {
+    joinError.textContent = "参加コードは01〜50の番号で入力してください。";
+    roomCodeInput.focus();
+    return;
+  }
+
+  roomCode = String(Number(enteredRoomCode)).padStart(2, "0");
+  hasJoinedRoom = false;
+  roomCodeInput.value = roomCode;
+  joinError.textContent = "部屋に接続しています...";
+  activeRoomCode.textContent = `部屋コード: ${roomCode}`;
+  creatorNotice.hidden = !roomCommandLetters;
+  if (roomCommandLetters) {
+    creatorCommandText.textContent = `作成者向けコマンド: Spaceキーを押しながら、ロックは「6780${roomCommandLetters}」、履歴削除とロック解除は「8880${roomCommandLetters}」を入力してください。`;
+  } else {
+    creatorCommandText.textContent = "";
+  }
+  connect();
+});
 
     </script>
   </body>

@@ -1,7 +1,7 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
-const { randomUUID } = require("node:crypto");
+const { randomBytes, randomUUID } = require("node:crypto");
 const { Transform } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 const { WebSocketServer, WebSocket } = require("./vendor/ws.cjs");
@@ -18,6 +18,12 @@ const MAX_VIDEO_SIZE = 300 * 1024 * 1024;
 const MAX_VIDEO_DURATION_SECONDS = 15 * 60;
 const ADMIN_ATTEMPT_WINDOW_MS = 60_000;
 const MAX_ADMIN_ATTEMPTS_PER_WINDOW = 5;
+const DEFAULT_ROOM_CODE = "01";
+const ROOM_CODE_COUNT = 50;
+const ROOM_EMPTY_GRACE_MS = 5 * 60 * 1000;
+const ROOM_CODES = Array.from({ length: ROOM_CODE_COUNT }, (_, index) => String(index + 1).padStart(2, "0"));
+const ROOM_CODE_PATTERN = /^(0[1-9]|[1-4][0-9]|50)$/;
+const OWNER_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ADMIN_ALLOWED_IP = process.env.ADMIN_ALLOWED_IP?.trim() || "";
 const COLORS = new Set(["#fffafa", "#fffbf5", "#f8fcf8", "#f7faff", "#fbf9ff"]);
 const REACTIONS = new Set(["heart", "star"]);
@@ -37,10 +43,40 @@ const MIME_TYPES = {
   ".js": "text/javascript; charset=utf-8",
   ".svg": "image/svg+xml",
 };
-const history = [];
+const rooms = new Map();
 const uploadedMedia = new Map();
-let isLocked = false;
-let lockOwnerToken = null;
+
+function getRoom(roomCode) {
+  let room = rooms.get(roomCode);
+  if (!room) {
+    room = {
+      history: [],
+      isLocked: false,
+      lockOwnerToken: null,
+      creatorToken: null,
+      commandLetters: null,
+      emptyTimeout: null,
+    };
+    rooms.set(roomCode, room);
+  } else if (room.emptyTimeout) {
+    clearTimeout(room.emptyTimeout);
+    room.emptyTimeout = null;
+  }
+  return room;
+}
+
+function createCommandLetters() {
+  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  return [...randomBytes(2)].map((value) => letters[value % letters.length]).join("");
+}
+
+function isValidRoomCommand(socket, payload, room) {
+  return socket.ownerToken === room.creatorToken && payload.commandLetters === room.commandLetters;
+}
+
+function getParticipantCount(roomCode) {
+  return [...webSocketServer.clients].filter((client) => client.roomCode === roomCode).length;
+}
 
 function setCorsHeaders(response) {
   response.setHeader("Access-Control-Allow-Origin", "*");
@@ -77,25 +113,43 @@ function removeMediaFile(media) {
   });
 }
 
-function clearHistory() {
-  for (const message of history) {
+function clearHistory(roomCode, room) {
+  for (const message of room.history) {
     removeMediaFile(message.media);
   }
-  for (const media of uploadedMedia.values()) {
-    removeMediaFile(media);
+  room.history.length = 0;
+  for (const [mediaId, media] of uploadedMedia) {
+    if (media.roomCode === roomCode) {
+      removeMediaFile(media);
+      uploadedMedia.delete(mediaId);
+    }
   }
-  history.length = 0;
-  uploadedMedia.clear();
+}
+
+function scheduleRoomRelease(roomCode, room) {
+  if (room.emptyTimeout) {
+    clearTimeout(room.emptyTimeout);
+  }
+  room.emptyTimeout = setTimeout(() => {
+    if (getParticipantCount(roomCode) !== 0 || rooms.get(roomCode) !== room) {
+      return;
+    }
+
+    clearHistory(roomCode, room);
+    rooms.delete(roomCode);
+  }, ROOM_EMPTY_GRACE_MS);
 }
 
 async function handleUpload(request, response, requestUrl) {
   const contentType = request.headers["content-type"]?.split(";")[0].trim().toLowerCase();
   const mediaType = MEDIA_TYPES.get(contentType);
   const ownerToken = request.headers["x-owner-token"];
+  const roomCode = requestUrl.searchParams.get("room") || DEFAULT_ROOM_CODE;
   if (
     !mediaType
+    || !ROOM_CODE_PATTERN.test(roomCode)
     || typeof ownerToken !== "string"
-    || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(ownerToken)
+    || !OWNER_TOKEN_PATTERN.test(ownerToken)
   ) {
     request.resume();
     respondWithJson(response, 415, { error: "対応していないファイル形式です。" });
@@ -146,7 +200,7 @@ async function handleUpload(request, response, requestUrl) {
       size,
       duration: mediaType.category === "video" ? duration : null,
     };
-    uploadedMedia.set(id, { ...media, ownerToken });
+    uploadedMedia.set(id, { ...media, ownerToken, roomCode });
     respondWithJson(response, 201, media);
   } catch (error) {
     fs.promises.unlink(filePath).catch((unlinkError) => {
@@ -228,9 +282,29 @@ const server = http.createServer(async (request, response) => {
   const requestUrl = new URL(request.url, `http://${request.headers.host}`);
   const pathname = requestUrl.pathname;
 
-  if (request.method === "OPTIONS" && pathname === "/api/uploads") {
+  if (request.method === "OPTIONS" && ["/api/uploads", "/api/rooms"].includes(pathname)) {
     setCorsHeaders(response);
     response.writeHead(204).end();
+    return;
+  }
+  if (request.method === "POST" && pathname === "/api/rooms") {
+    const creatorToken = request.headers["x-owner-token"];
+    if (typeof creatorToken !== "string" || !OWNER_TOKEN_PATTERN.test(creatorToken)) {
+      respondWithJson(response, 400, { error: "部屋を作成できませんでした。" });
+      return;
+    }
+
+    const roomCode = ROOM_CODES.find((code) => !rooms.has(code));
+    if (!roomCode) {
+      respondWithJson(response, 409, { error: "作成できる部屋がありません。しばらくしてからもう一度お試しください。" });
+      return;
+    }
+
+    const room = getRoom(roomCode);
+    room.creatorToken = creatorToken;
+    room.commandLetters = createCommandLetters();
+    scheduleRoomRelease(roomCode, room);
+    respondWithJson(response, 201, { code: roomCode, commandLetters: room.commandLetters });
     return;
   }
   if (request.method === "POST" && pathname === "/api/uploads") {
@@ -274,27 +348,51 @@ const server = http.createServer(async (request, response) => {
 
 const webSocketServer = new WebSocketServer({ server, path: "/ws" });
 
-function broadcast(payload) {
+function broadcastToRoom(roomCode, payload) {
   const serialized = JSON.stringify(payload);
   for (const client of webSocketServer.clients) {
-    if (client.readyState === WebSocket.OPEN) {
+    if (client.readyState === WebSocket.OPEN && client.roomCode === roomCode) {
       client.send(serialized);
     }
   }
 }
 
-function broadcastLockState() {
+function disbandRoom(roomCode, room) {
+  if (room.emptyTimeout) {
+    clearTimeout(room.emptyTimeout);
+    room.emptyTimeout = null;
+  }
+  clearHistory(roomCode, room);
+  if (rooms.get(roomCode) === room) {
+    rooms.delete(roomCode);
+  }
+
+  const serialized = JSON.stringify({ type: "room_disbanded" });
   for (const client of webSocketServer.clients) {
-    if (client.readyState !== WebSocket.OPEN) {
+    if (client.roomCode !== roomCode) {
       continue;
     }
 
-    const isLockOwner = Boolean(client.ownerToken) && client.ownerToken === lockOwnerToken;
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(serialized);
+    }
+    client.roomCode = null;
+    client.close(1000, "Room disbanded");
+  }
+}
+
+function broadcastLockState(roomCode, room) {
+  for (const client of webSocketServer.clients) {
+    if (client.readyState !== WebSocket.OPEN || client.roomCode !== roomCode) {
+      continue;
+    }
+
+    const isLockOwner = Boolean(client.ownerToken) && client.ownerToken === room.lockOwnerToken;
     client.send(JSON.stringify({
       type: "lock_state",
-      locked: isLocked && !isLockOwner,
+      locked: room.isLocked && !isLockOwner,
       isLockOwner,
-      lockOwnerToken,
+      lockOwnerToken: room.lockOwnerToken,
     }));
   }
 }
@@ -319,17 +417,17 @@ function presentMessage(message, ownerToken) {
   };
 }
 
-function broadcastMessage(message) {
+function broadcastMessage(roomCode, message) {
   for (const client of webSocketServer.clients) {
-    if (client.readyState === WebSocket.OPEN && client.ownerToken) {
+    if (client.readyState === WebSocket.OPEN && client.roomCode === roomCode && client.ownerToken) {
       client.send(JSON.stringify(presentMessage(message, client.ownerToken)));
     }
   }
 }
 
-function broadcastReactions(message) {
+function broadcastReactions(roomCode, message) {
   for (const client of webSocketServer.clients) {
-    if (client.readyState === WebSocket.OPEN && client.ownerToken) {
+    if (client.readyState === WebSocket.OPEN && client.roomCode === roomCode && client.ownerToken) {
       const presentedMessage = presentMessage(message, client.ownerToken);
       client.send(JSON.stringify({
         type: "reaction_update",
@@ -350,12 +448,28 @@ function getClientIp(request) {
 }
 
 webSocketServer.on("connection", (socket, request) => {
-  const isAllowedAdmin = true;
+  const requestUrl = new URL(request.url, `http://${request.headers.host}`);
+  const roomCode = requestUrl.searchParams.get("room") || DEFAULT_ROOM_CODE;
+  if (!ROOM_CODE_PATTERN.test(roomCode)) {
+    socket.close(1008, "Invalid room code");
+    return;
+  }
+  if (!rooms.has(roomCode)) {
+    socket.send(JSON.stringify({ type: "room_not_found" }));
+    socket.close(1008, "Room not found");
+    return;
+  }
+  socket.roomCode = roomCode;
+  const room = getRoom(roomCode);
 
   let adminAttemptWindowStartedAt = Date.now();
   let adminAttemptsInWindow = 0;
 
   socket.on("message", (rawMessage) => {
+    if (rooms.get(roomCode) !== room) {
+      return;
+    }
+
     let payload;
     try {
       payload = JSON.parse(rawMessage.toString());
@@ -375,14 +489,14 @@ webSocketServer.on("connection", (socket, request) => {
       socket.ownerToken = payload.token;
       socket.send(JSON.stringify({
         type: "init",
-        messages: history.map((message) => presentMessage(message, socket.ownerToken)),
-        participants: webSocketServer.clients.size,
-        locked: isLocked && socket.ownerToken !== lockOwnerToken,
-        isLockOwner: Boolean(socket.ownerToken) && socket.ownerToken === lockOwnerToken,
-        lockOwnerToken,
-        canDeleteAll: isAllowedAdmin,
+        messages: room.history.map((message) => presentMessage(message, socket.ownerToken)),
+        participants: getParticipantCount(roomCode),
+        locked: room.isLocked && socket.ownerToken !== room.lockOwnerToken,
+        isLockOwner: Boolean(socket.ownerToken) && socket.ownerToken === room.lockOwnerToken,
+        lockOwnerToken: room.lockOwnerToken,
+        canDeleteAll: socket.ownerToken === room.creatorToken,
       }));
-      broadcast({ type: "participants", count: webSocketServer.clients.size });
+      broadcastToRoom(roomCode, { type: "participants", count: getParticipantCount(roomCode) });
       return;
     }
 
@@ -390,7 +504,19 @@ webSocketServer.on("connection", (socket, request) => {
       return;
     }
 
+    if (payload.type === "disband_room") {
+      if (!isValidRoomCommand(socket, payload, room)) {
+        return;
+      }
+      disbandRoom(roomCode, room);
+      return;
+    }
+
     if (payload.type === "admin_lock") {
+      if (!isValidRoomCommand(socket, payload, room)) {
+        return;
+      }
+
       const now = Date.now();
       if (now - adminAttemptWindowStartedAt >= ADMIN_ATTEMPT_WINDOW_MS) {
         adminAttemptWindowStartedAt = now;
@@ -402,38 +528,44 @@ webSocketServer.on("connection", (socket, request) => {
       }
 
       adminAttemptsInWindow += 1;
-      isLocked = !isLocked;
-      lockOwnerToken = isLocked ? socket.ownerToken : null;
-      broadcastLockState();
+      room.isLocked = !room.isLocked;
+      room.lockOwnerToken = room.isLocked ? socket.ownerToken : null;
+      broadcastLockState(roomCode, room);
       return;
     }
 
     if (payload.type === "delete_all_messages") {
-      clearHistory();
-      broadcast({ type: "messages_cleared" });
+      if (!isValidRoomCommand(socket, payload, room)) {
+        return;
+      }
+      clearHistory(roomCode, room);
+      broadcastToRoom(roomCode, { type: "messages_cleared" });
       return;
     }
 
     if (payload.type === "reset_chat") {
-      clearHistory();
-      isLocked = false;
-      lockOwnerToken = null;
-      broadcast({ type: "messages_cleared" });
-      broadcastLockState();
+      if (!isValidRoomCommand(socket, payload, room)) {
+        return;
+      }
+      clearHistory(roomCode, room);
+      room.isLocked = false;
+      room.lockOwnerToken = null;
+      broadcastToRoom(roomCode, { type: "messages_cleared" });
+      broadcastLockState(roomCode, room);
       return;
     }
 
     if (payload.type === "delete_message") {
-      const messageIndex = history.findIndex(
+      const messageIndex = room.history.findIndex(
         (message) => message.id === payload.id && message.ownerToken === socket.ownerToken,
       );
       if (messageIndex === -1) {
         return;
       }
 
-      const [deletedMessage] = history.splice(messageIndex, 1);
+      const [deletedMessage] = room.history.splice(messageIndex, 1);
       removeMediaFile(deletedMessage.media);
-      broadcast({ type: "message_deleted", id: payload.id });
+      broadcastToRoom(roomCode, { type: "message_deleted", id: payload.id });
       return;
     }
 
@@ -442,7 +574,7 @@ webSocketServer.on("connection", (socket, request) => {
         return;
       }
 
-      const message = history.find((item) => item.id === payload.id);
+      const message = room.history.find((item) => item.id === payload.id);
       if (!message) {
         return;
       }
@@ -454,7 +586,7 @@ webSocketServer.on("connection", (socket, request) => {
       } else {
         owners.splice(ownerIndex, 1);
       }
-      broadcastReactions(message);
+      broadcastReactions(roomCode, message);
       return;
     }
 
@@ -469,7 +601,7 @@ webSocketServer.on("connection", (socket, request) => {
     const pendingMedia = typeof payload.mediaId === "string" ? uploadedMedia.get(payload.mediaId) : null;
     if (
       (!text && !pendingMedia)
-      || (pendingMedia && pendingMedia.ownerToken !== socket.ownerToken)
+      || (pendingMedia && (pendingMedia.ownerToken !== socket.ownerToken || pendingMedia.roomCode !== roomCode))
     ) {
       return;
     }
@@ -478,7 +610,7 @@ webSocketServer.on("connection", (socket, request) => {
       ? payload.name.trim().slice(0, MAX_NAME_LENGTH)
       : "";
     const replyTo = typeof payload.replyToId === "string"
-      ? history.find((item) => item.id === payload.replyToId)
+      ? room.history.find((item) => item.id === payload.replyToId)
       : undefined;
     const message = {
       type: "message",
@@ -508,16 +640,22 @@ webSocketServer.on("connection", (socket, request) => {
       uploadedMedia.delete(pendingMedia.id);
     }
 
-    history.push(message);
-    if (history.length > MAX_HISTORY) {
-      const removedMessage = history.shift();
+    room.history.push(message);
+    if (room.history.length > MAX_HISTORY) {
+      const removedMessage = room.history.shift();
       removeMediaFile(removedMessage.media);
     }
-    broadcastMessage(message);
+    broadcastMessage(roomCode, message);
   });
 
   socket.on("close", () => {
-    broadcast({ type: "participants", count: webSocketServer.clients.size });
+    if (rooms.get(roomCode) !== room) {
+      return;
+    }
+    broadcastToRoom(roomCode, { type: "participants", count: getParticipantCount(roomCode) });
+    if (getParticipantCount(roomCode) === 0) {
+      scheduleRoomRelease(roomCode, room);
+    }
   });
 });
 
