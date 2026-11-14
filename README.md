@@ -15,7 +15,7 @@ npm start
 
 ## GitHub Pages
 
-フロントエンドは [https://scratch-chat.github.io/](https://scratch-chat.github.io/) で公開し、`main`へのpush時にGitHub Actionsから`public/`をデプロイします。GitHub Pagesは静的ファイルのみを配信するため、リアルタイムチャットには別途WebSocketサーバーが必要です。Pages用の接続先は`public/config.js`で設定します。現在はCodespacesのポート8000を接続先にしています。Codespaceが停止するとチャットも利用できなくなるため、常時利用には常時稼働するWebSocketホストが必要です。
+フロントエンドは [https://scratch-chat.github.io/](https://scratch-chat.github.io/) で公開し、`main`へのpush時にGitHub Actionsから`public/`をデプロイします。HTML、CSS、ブラウザー側JavaScript、画像は`public/index.html`にまとめています。GitHub Pagesは静的ファイルのみを配信するため、リアルタイムチャットには別途WebSocketサーバーが必要です。接続先は`public/index.html`内の`window.CHAT_WEBSOCKET_URL`で設定します。現在はCodespacesのポート8000を接続先にしています。Codespaceが停止するとチャットも利用できなくなるため、常時利用には常時稼働するWebSocketホストが必要です。
 
 ## ロック画面
 

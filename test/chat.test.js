@@ -82,15 +82,10 @@ test("serves the chat and broadcasts colored messages to all participants", asyn
   const pageHtml = await page.text();
   assert.match(pageHtml, /Scratch チャット/);
   assert.match(pageHtml, /id="lock-screen"/);
-
-  const icon = await fetch(`${baseUrl}/scratch-icon.svg`);
-  assert.equal(icon.status, 200);
-  assert.match(icon.headers.get("content-type"), /image\/svg\+xml/);
-  assert.match(await icon.text(), /viewBox="55 56 37 36"/);
-
-  const lockImage = await fetch(`${baseUrl}/lock-screen.svg`);
-  assert.equal(lockImage.status, 200);
-  assert.match(await lockImage.text(), /viewBox="159 172 787 589"/);
+  assert.match(pageHtml, /<style>/);
+  assert.match(pageHtml, /function connect\(\)/);
+  assert.match(pageHtml, /window\.CHAT_WEBSOCKET_URL/);
+  assert.equal((pageHtml.match(/data:image\/svg\+xml;base64,/g) || []).length, 2);
 
   const { socket: first, firstPayload: firstInitPromise } = await connectWebSocket();
   t.after(() => first.close());
