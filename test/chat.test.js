@@ -90,6 +90,8 @@ test("serves the chat and broadcasts colored messages to all participants", asyn
   assert.match(pageHtml, /function connect\(\)/);
   assert.match(pageHtml, /window\.CHAT_WEBSOCKET_URL/);
   assert.match(pageHtml, /id="clear-chat-button"/);
+  assert.match(pageHtml, /id="reply-preview"/);
+  assert.match(pageHtml, /reaction_update/);
   assert.equal((pageHtml.match(/data:image\/svg\+xml;base64,/g) || []).length, 2);
 
   const { socket: first, firstPayload: firstInitPromise } = await connectWebSocket();
@@ -125,6 +127,8 @@ test("serves the chat and broadcasts colored messages to all participants", asyn
   assert.equal(toSecond.id, toFirst.id);
   assert.equal(toFirst.canDelete, false);
   assert.equal(toSecond.canDelete, true);
+  assert.deepEqual(toFirst.reactions, { heart: 0, star: 0 });
+  assert.deepEqual(toSecond.myReactions, { heart: false, star: false });
 
   second.send(JSON.stringify({ type: "admin_lock" }));
   second.send(JSON.stringify({ type: "delete_all_messages" }));
@@ -141,6 +145,70 @@ test("serves the chat and broadcasts colored messages to all participants", asyn
   assert.equal((await nextPayload(third)).count, 3);
   assert.equal((await nextPayload(first)).count, 3);
   assert.equal((await nextPayload(second)).count, 3);
+
+  const firstHeartUpdate = nextPayload(first);
+  const secondHeartUpdate = nextPayload(second);
+  const thirdHeartUpdate = nextPayload(third);
+  second.send(JSON.stringify({ type: "reaction", id: toFirst.id, reaction: "heart" }));
+  const [heartForFirst, heartForSecond, heartForThird] = await Promise.all([
+    firstHeartUpdate,
+    secondHeartUpdate,
+    thirdHeartUpdate,
+  ]);
+  assert.deepEqual(heartForFirst.reactions, { heart: 1, star: 0 });
+  assert.deepEqual(heartForFirst.myReactions, { heart: false, star: false });
+  assert.deepEqual(heartForSecond.myReactions, { heart: true, star: false });
+  assert.deepEqual(heartForThird.myReactions, { heart: false, star: false });
+
+  const firstStarUpdate = nextPayload(first);
+  const secondStarUpdate = nextPayload(second);
+  const thirdStarUpdate = nextPayload(third);
+  first.send(JSON.stringify({ type: "reaction", id: toFirst.id, reaction: "star" }));
+  const [starForFirst, starForSecond, starForThird] = await Promise.all([
+    firstStarUpdate,
+    secondStarUpdate,
+    thirdStarUpdate,
+  ]);
+  assert.deepEqual(starForFirst.reactions, { heart: 1, star: 1 });
+  assert.deepEqual(starForFirst.myReactions, { heart: false, star: true });
+  assert.deepEqual(starForSecond.myReactions, { heart: true, star: false });
+  assert.deepEqual(starForThird.myReactions, { heart: false, star: false });
+
+  const firstHeartToggle = nextPayload(first);
+  const secondHeartToggle = nextPayload(second);
+  const thirdHeartToggle = nextPayload(third);
+  second.send(JSON.stringify({ type: "reaction", id: toFirst.id, reaction: "heart" }));
+  const [heartToggleForFirst, heartToggleForSecond, heartToggleForThird] = await Promise.all([
+    firstHeartToggle,
+    secondHeartToggle,
+    thirdHeartToggle,
+  ]);
+  assert.deepEqual(heartToggleForFirst.reactions, { heart: 0, star: 1 });
+  assert.deepEqual(heartToggleForSecond.myReactions, { heart: false, star: false });
+  assert.deepEqual(heartToggleForThird.reactions, { heart: 0, star: 1 });
+
+  const firstReply = nextPayload(first);
+  const secondReply = nextPayload(second);
+  const thirdReply = nextPayload(third);
+  first.send(JSON.stringify({
+    type: "message",
+    name: "管理者",
+    text: "返信テスト",
+    color: "#f7faff",
+    replyToId: toFirst.id,
+  }));
+  const [replyForFirst, replyForSecond, replyForThird] = await Promise.all([
+    firstReply,
+    secondReply,
+    thirdReply,
+  ]);
+  assert.deepEqual(replyForFirst.reply, {
+    id: toFirst.id,
+    name: "テスト参加者",
+    text: "こんにちは",
+  });
+  assert.deepEqual(replyForSecond.reply, replyForFirst.reply);
+  assert.deepEqual(replyForThird.reply, replyForFirst.reply);
 
   const firstDelete = nextPayload(first);
   const secondDelete = nextPayload(second);

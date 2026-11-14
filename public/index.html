@@ -235,13 +235,64 @@ h1 {
 }
 
 .delete-message-button {
-  margin-left: auto;
   padding: 2px 6px;
   border: 0;
   background: transparent;
   color: #a66;
   font-size: 10px;
   cursor: pointer;
+}
+
+.reply-message-button {
+  margin-left: auto;
+  padding: 2px 6px;
+  border: 0;
+  background: transparent;
+  color: #777783;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.reply-quote {
+  max-width: 100%;
+  margin: 0 0 6px 3px;
+  padding-left: 8px;
+  border-left: 2px solid #c8bee9;
+  color: #777783;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.message-reactions {
+  display: flex;
+  gap: 6px;
+  margin: 7px 0 0 3px;
+}
+
+.reaction-button {
+  display: inline-flex;
+  min-width: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid #ededf0;
+  border-radius: 999px;
+  background: #fff;
+  color: #666671;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.reaction-button[aria-pressed="true"] {
+  border-color: #f2cbd5;
+  background: #fff5f7;
+}
+
+.reaction-button[data-reaction="star"][aria-pressed="true"] {
+  border-color: #efdfa8;
+  background: #fffbee;
 }
 
 .message-bubble {
@@ -269,6 +320,40 @@ h1 {
   justify-content: space-between;
   gap: 20px;
   margin-bottom: 11px;
+}
+
+.reply-preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 7px 10px;
+  border-left: 3px solid #b7a9ef;
+  border-radius: 6px;
+  background: #f8f6ff;
+  color: #666671;
+  font-size: 11px;
+}
+
+.reply-preview[hidden] {
+  display: none;
+}
+
+.reply-preview-text {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reply-cancel-button {
+  padding: 2px 6px;
+  border: 0;
+  background: transparent;
+  color: #777783;
+  font-size: 11px;
+  cursor: pointer;
 }
 
 .name-field {
@@ -514,6 +599,10 @@ h1 {
             <div class="color-options" id="color-options"></div>
           </fieldset>
         </div>
+        <div class="reply-preview" id="reply-preview" hidden>
+          <span class="reply-preview-text" id="reply-preview-text"></span>
+          <button class="reply-cancel-button" id="reply-cancel-button" type="button" aria-label="返信を解除">×</button>
+        </div>
         <div class="input-row">
           <label class="visually-hidden" for="message-input">メッセージ</label>
           <input
@@ -565,6 +654,9 @@ const form = document.querySelector("#chat-form");
 const messageInput = document.querySelector("#message-input");
 const nameInput = document.querySelector("#name-input");
 const sendButton = document.querySelector("#send-button");
+const replyPreview = document.querySelector("#reply-preview");
+const replyPreviewText = document.querySelector("#reply-preview-text");
+const replyCancelButton = document.querySelector("#reply-cancel-button");
 const connectionStatus = document.querySelector("#connection-status");
 const connectionLabel = document.querySelector("#connection-label");
 const participantCount = document.querySelector("#participant-count");
@@ -575,6 +667,7 @@ let selectedColor = COLORS[3].value;
 let socket;
 let reconnectDelay = 1000;
 let enteredDigits = "";
+let replyTo = null;
 
 function createColorOptions() {
   for (const color of COLORS) {
@@ -624,6 +717,16 @@ function appendMessage(message) {
   bubble.textContent = message.text;
 
   meta.append(name, time);
+  const replyButton = document.createElement("button");
+  replyButton.className = "reply-message-button";
+  replyButton.type = "button";
+  replyButton.textContent = "↩";
+  replyButton.setAttribute("aria-label", `${message.name}に返信`);
+  replyButton.addEventListener("click", () => {
+    setReplyTo(message);
+  });
+  meta.append(replyButton);
+
   if (message.canDelete) {
     const deleteButton = document.createElement("button");
     deleteButton.className = "delete-message-button";
@@ -637,12 +740,69 @@ function appendMessage(message) {
     });
     meta.append(deleteButton);
   }
-  item.append(meta, bubble);
+
+  item.append(meta);
+  if (message.reply) {
+    const replyQuote = document.createElement("div");
+    replyQuote.className = "reply-quote";
+    replyQuote.textContent = `返信先 ${message.reply.name}: ${message.reply.text}`;
+    item.append(replyQuote);
+  }
+  item.append(bubble);
+
+  const reactionBar = document.createElement("div");
+  reactionBar.className = "message-reactions";
+  const reactionCounts = message.reactions || { heart: 0, star: 0 };
+  const myReactions = message.myReactions || { heart: false, star: false };
+  for (const reaction of [
+    { key: "heart", icon: "❤️", label: "ハート" },
+    { key: "star", icon: "⭐", label: "星" },
+  ]) {
+    const button = document.createElement("button");
+    button.className = "reaction-button";
+    button.dataset.reaction = reaction.key;
+    button.type = "button";
+    button.setAttribute("aria-label", `${reaction.label}でリアクション`);
+    button.setAttribute("aria-pressed", String(Boolean(myReactions[reaction.key])));
+    const count = document.createElement("span");
+    count.className = "reaction-count";
+    count.textContent = String(reactionCounts[reaction.key] || 0);
+    button.append(document.createTextNode(reaction.icon), count);
+    button.addEventListener("click", () => {
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+          type: "reaction",
+          id: message.id,
+          reaction: reaction.key,
+        }));
+      }
+    });
+    reactionBar.append(button);
+  }
+  item.append(reactionBar);
   messagesElement.append(item);
   messagesElement.scrollTop = messagesElement.scrollHeight;
 }
 
+function setReplyTo(message) {
+  replyTo = { id: message.id, name: message.name, text: message.text };
+  replyPreviewText.textContent = `返信先 ${message.name}: ${message.text}`;
+  replyPreviewText.title = replyPreviewText.textContent;
+  replyPreview.hidden = false;
+  messageInput.focus();
+}
+
+function clearReply() {
+  replyTo = null;
+  replyPreviewText.textContent = "";
+  replyPreviewText.title = "";
+  replyPreview.hidden = true;
+}
+
 function removeMessage(messageId) {
+  if (replyTo?.id === messageId) {
+    clearReply();
+  }
   for (const item of messagesElement.querySelectorAll(".message")) {
     if (item.dataset.messageId === messageId) {
       item.remove();
@@ -655,11 +815,26 @@ function removeMessage(messageId) {
 }
 
 function clearMessages() {
+  clearReply();
   for (const item of messagesElement.querySelectorAll(".message")) {
     item.remove();
   }
   if (emptyState && emptyState.parentElement !== messagesElement) {
     messagesElement.append(emptyState);
+  }
+}
+
+function updateReactions(payload) {
+  const item = [...messagesElement.querySelectorAll(".message")]
+    .find((message) => message.dataset.messageId === payload.id);
+  if (!item) {
+    return;
+  }
+
+  for (const button of item.querySelectorAll(".reaction-button")) {
+    const reaction = button.dataset.reaction;
+    button.querySelector(".reaction-count").textContent = String(payload.reactions[reaction]);
+    button.setAttribute("aria-pressed", String(payload.myReactions[reaction]));
   }
 }
 
@@ -706,6 +881,8 @@ function connect() {
       removeMessage(payload.id);
     } else if (payload.type === "messages_cleared") {
       clearMessages();
+    } else if (payload.type === "reaction_update") {
+      updateReactions(payload);
     } else if (payload.type === "lock_state") {
       setLockState(payload.locked);
     }
@@ -734,10 +911,14 @@ form.addEventListener("submit", (event) => {
     name: nameInput.value.trim() || "ゲスト",
     text,
     color: selectedColor,
+    replyToId: replyTo?.id || null,
   }));
   messageInput.value = "";
+  clearReply();
   messageInput.focus();
 });
+
+replyCancelButton.addEventListener("click", clearReply);
 
 clearChatButton.addEventListener("click", () => {
   if (

@@ -13,6 +13,7 @@ const ADMIN_ATTEMPT_WINDOW_MS = 60_000;
 const MAX_ADMIN_ATTEMPTS_PER_WINDOW = 5;
 const ADMIN_ALLOWED_IP = process.env.ADMIN_ALLOWED_IP?.trim() || "";
 const COLORS = new Set(["#fffafa", "#fffbf5", "#f8fcf8", "#f7faff", "#fbf9ff"]);
+const REACTIONS = new Set(["heart", "star"]);
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -63,10 +64,22 @@ function broadcast(payload) {
 }
 
 function presentMessage(message, ownerToken) {
-  const { ownerToken: messageOwnerToken, ...publicMessage } = message;
+  const {
+    ownerToken: messageOwnerToken,
+    reactions: reactionOwners,
+    ...publicMessage
+  } = message;
   return {
     ...publicMessage,
     canDelete: messageOwnerToken === ownerToken,
+    reactions: {
+      heart: reactionOwners.heart.length,
+      star: reactionOwners.star.length,
+    },
+    myReactions: {
+      heart: reactionOwners.heart.includes(ownerToken),
+      star: reactionOwners.star.includes(ownerToken),
+    },
   };
 }
 
@@ -74,6 +87,20 @@ function broadcastMessage(message) {
   for (const client of webSocketServer.clients) {
     if (client.readyState === WebSocket.OPEN && client.ownerToken) {
       client.send(JSON.stringify(presentMessage(message, client.ownerToken)));
+    }
+  }
+}
+
+function broadcastReactions(message) {
+  for (const client of webSocketServer.clients) {
+    if (client.readyState === WebSocket.OPEN && client.ownerToken) {
+      const presentedMessage = presentMessage(message, client.ownerToken);
+      client.send(JSON.stringify({
+        type: "reaction_update",
+        id: message.id,
+        reactions: presentedMessage.reactions,
+        myReactions: presentedMessage.myReactions,
+      }));
     }
   }
 }
@@ -170,6 +197,27 @@ webSocketServer.on("connection", (socket, request) => {
       return;
     }
 
+    if (payload.type === "reaction") {
+      if (typeof payload.id !== "string" || !REACTIONS.has(payload.reaction)) {
+        return;
+      }
+
+      const message = history.find((item) => item.id === payload.id);
+      if (!message) {
+        return;
+      }
+
+      const owners = message.reactions[payload.reaction];
+      const ownerIndex = owners.indexOf(socket.ownerToken);
+      if (ownerIndex === -1) {
+        owners.push(socket.ownerToken);
+      } else {
+        owners.splice(ownerIndex, 1);
+      }
+      broadcastReactions(message);
+      return;
+    }
+
     if (payload.type !== "message" || typeof payload.text !== "string") {
       return;
     }
@@ -182,6 +230,9 @@ webSocketServer.on("connection", (socket, request) => {
     const name = typeof payload.name === "string"
       ? payload.name.trim().slice(0, MAX_NAME_LENGTH)
       : "";
+    const replyTo = typeof payload.replyToId === "string"
+      ? history.find((item) => item.id === payload.replyToId)
+      : undefined;
     const message = {
       type: "message",
       id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -190,6 +241,10 @@ webSocketServer.on("connection", (socket, request) => {
       color: COLORS.has(payload.color) ? payload.color : "#f7faff",
       timestamp: Date.now(),
       ownerToken: socket.ownerToken,
+      reply: replyTo
+        ? { id: replyTo.id, name: replyTo.name, text: replyTo.text }
+        : null,
+      reactions: { heart: [], star: [] },
     };
 
     history.push(message);
