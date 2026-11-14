@@ -1,0 +1,13 @@
+{
+  "name": "group-chat",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A lightweight real-time chat app",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  }
+}
