@@ -148,6 +148,20 @@ h1 {
   color: #a0a0a8;
 }
 
+.clear-chat-button {
+  padding: 5px 8px;
+  border: 1px solid #f1d2d2;
+  border-radius: 7px;
+  background: #fff;
+  color: #b44848;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.clear-chat-button[hidden] {
+  display: none;
+}
+
 .conversation {
   display: flex;
   min-height: 0;
@@ -218,6 +232,16 @@ h1 {
 .message-name {
   color: #55555f;
   font-weight: 600;
+}
+
+.delete-message-button {
+  margin-left: auto;
+  padding: 2px 6px;
+  border: 0;
+  background: transparent;
+  color: #a66;
+  font-size: 10px;
+  cursor: pointer;
 }
 
 .message-bubble {
@@ -465,6 +489,7 @@ h1 {
             <span id="connection-label">接続中...</span>
           </span>
           <span class="participant-count" id="participant-count">参加者 -- 人</span>
+          <button class="clear-chat-button" id="clear-chat-button" type="button" hidden>全員分を削除</button>
         </div>
       </header>
 
@@ -525,6 +550,14 @@ const COLORS = [
   { value: "#fbf9ff", swatch: "#e8dcff", label: "紫" },
 ];
 
+const OWNER_TOKEN_KEY = "scratch-chat-owner-token";
+const OWNER_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+let ownerToken = window.localStorage.getItem(OWNER_TOKEN_KEY);
+if (!OWNER_TOKEN_PATTERN.test(ownerToken || "")) {
+  ownerToken = window.crypto.randomUUID();
+  window.localStorage.setItem(OWNER_TOKEN_KEY, ownerToken);
+}
+
 const messagesElement = document.querySelector("#messages");
 const emptyState = document.querySelector("#empty-state");
 const colorOptions = document.querySelector("#color-options");
@@ -535,6 +568,7 @@ const sendButton = document.querySelector("#send-button");
 const connectionStatus = document.querySelector("#connection-status");
 const connectionLabel = document.querySelector("#connection-label");
 const participantCount = document.querySelector("#participant-count");
+const clearChatButton = document.querySelector("#clear-chat-button");
 const lockScreen = document.querySelector("#lock-screen");
 
 let selectedColor = COLORS[3].value;
@@ -568,6 +602,7 @@ function appendMessage(message) {
 
   const item = document.createElement("article");
   item.className = "message";
+  item.dataset.messageId = message.id;
 
   const meta = document.createElement("div");
   meta.className = "message-meta";
@@ -589,9 +624,43 @@ function appendMessage(message) {
   bubble.textContent = message.text;
 
   meta.append(name, time);
+  if (message.canDelete) {
+    const deleteButton = document.createElement("button");
+    deleteButton.className = "delete-message-button";
+    deleteButton.type = "button";
+    deleteButton.textContent = "削除";
+    deleteButton.setAttribute("aria-label", `${message.name}のメッセージを削除`);
+    deleteButton.addEventListener("click", () => {
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: "delete_message", id: message.id }));
+      }
+    });
+    meta.append(deleteButton);
+  }
   item.append(meta, bubble);
   messagesElement.append(item);
   messagesElement.scrollTop = messagesElement.scrollHeight;
+}
+
+function removeMessage(messageId) {
+  for (const item of messagesElement.querySelectorAll(".message")) {
+    if (item.dataset.messageId === messageId) {
+      item.remove();
+      break;
+    }
+  }
+  if (!messagesElement.querySelector(".message") && emptyState && emptyState.parentElement !== messagesElement) {
+    messagesElement.append(emptyState);
+  }
+}
+
+function clearMessages() {
+  for (const item of messagesElement.querySelectorAll(".message")) {
+    item.remove();
+  }
+  if (emptyState && emptyState.parentElement !== messagesElement) {
+    messagesElement.append(emptyState);
+  }
 }
 
 function setConnected(connected) {
@@ -602,6 +671,7 @@ function setConnected(connected) {
 }
 
 function connect() {
+  clearChatButton.hidden = true;
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const socketUrl = window.CHAT_WEBSOCKET_URL || `${protocol}//${window.location.host}/ws`;
   socket = new WebSocket(socketUrl);
@@ -609,6 +679,7 @@ function connect() {
 
   socket.addEventListener("open", () => {
     reconnectDelay = 1000;
+    socket.send(JSON.stringify({ type: "identify", token: ownerToken }));
     setConnected(true);
   });
 
@@ -623,6 +694,7 @@ function connect() {
     if (payload.type === "init") {
       participantCount.textContent = `参加者 ${payload.participants} 人`;
       setLockState(payload.locked);
+      clearChatButton.hidden = !payload.canDeleteAll;
       for (const message of payload.messages) {
         appendMessage(message);
       }
@@ -630,6 +702,10 @@ function connect() {
       participantCount.textContent = `参加者 ${payload.count} 人`;
     } else if (payload.type === "message") {
       appendMessage(payload);
+    } else if (payload.type === "message_deleted") {
+      removeMessage(payload.id);
+    } else if (payload.type === "messages_cleared") {
+      clearMessages();
     } else if (payload.type === "lock_state") {
       setLockState(payload.locked);
     }
@@ -661,6 +737,16 @@ form.addEventListener("submit", (event) => {
   }));
   messageInput.value = "";
   messageInput.focus();
+});
+
+clearChatButton.addEventListener("click", () => {
+  if (
+    socket?.readyState !== WebSocket.OPEN
+    || !window.confirm("全員のチャット履歴を削除しますか？")
+  ) {
+    return;
+  }
+  socket.send(JSON.stringify({ type: "delete_all_messages" }));
 });
 
 document.addEventListener("keydown", (event) => {

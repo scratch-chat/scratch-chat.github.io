@@ -62,6 +62,22 @@ function broadcast(payload) {
   }
 }
 
+function presentMessage(message, ownerToken) {
+  const { ownerToken: messageOwnerToken, ...publicMessage } = message;
+  return {
+    ...publicMessage,
+    canDelete: messageOwnerToken === ownerToken,
+  };
+}
+
+function broadcastMessage(message) {
+  for (const client of webSocketServer.clients) {
+    if (client.readyState === WebSocket.OPEN && client.ownerToken) {
+      client.send(JSON.stringify(presentMessage(message, client.ownerToken)));
+    }
+  }
+}
+
 function getClientIp(request) {
   const forwardedFor = request.headers["x-forwarded-for"];
   const clientIp = typeof forwardedFor === "string"
@@ -74,14 +90,6 @@ webSocketServer.on("connection", (socket, request) => {
   const isAllowedAdmin = ADMIN_ALLOWED_IP !== ""
     && getClientIp(request) === ADMIN_ALLOWED_IP;
 
-  socket.send(JSON.stringify({
-    type: "init",
-    messages: history,
-    participants: webSocketServer.clients.size,
-    locked: isLocked,
-  }));
-  broadcast({ type: "participants", count: webSocketServer.clients.size });
-
   let adminAttemptWindowStartedAt = Date.now();
   let adminAttemptsInWindow = 0;
 
@@ -90,6 +98,31 @@ webSocketServer.on("connection", (socket, request) => {
     try {
       payload = JSON.parse(rawMessage.toString());
     } catch {
+      return;
+    }
+
+    if (payload.type === "identify") {
+      if (
+        socket.ownerToken
+        || typeof payload.token !== "string"
+        || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(payload.token)
+      ) {
+        return;
+      }
+
+      socket.ownerToken = payload.token;
+      socket.send(JSON.stringify({
+        type: "init",
+        messages: history.map((message) => presentMessage(message, socket.ownerToken)),
+        participants: webSocketServer.clients.size,
+        locked: isLocked,
+        canDeleteAll: isAllowedAdmin,
+      }));
+      broadcast({ type: "participants", count: webSocketServer.clients.size });
+      return;
+    }
+
+    if (!socket.ownerToken) {
       return;
     }
 
@@ -114,6 +147,29 @@ webSocketServer.on("connection", (socket, request) => {
       return;
     }
 
+    if (payload.type === "delete_all_messages") {
+      if (!isAllowedAdmin) {
+        return;
+      }
+
+      history.length = 0;
+      broadcast({ type: "messages_cleared" });
+      return;
+    }
+
+    if (payload.type === "delete_message") {
+      const messageIndex = history.findIndex(
+        (message) => message.id === payload.id && message.ownerToken === socket.ownerToken,
+      );
+      if (messageIndex === -1) {
+        return;
+      }
+
+      history.splice(messageIndex, 1);
+      broadcast({ type: "message_deleted", id: payload.id });
+      return;
+    }
+
     if (payload.type !== "message" || typeof payload.text !== "string") {
       return;
     }
@@ -133,13 +189,14 @@ webSocketServer.on("connection", (socket, request) => {
       text,
       color: COLORS.has(payload.color) ? payload.color : "#f7faff",
       timestamp: Date.now(),
+      ownerToken: socket.ownerToken,
     };
 
     history.push(message);
     if (history.length > MAX_HISTORY) {
       history.shift();
     }
-    broadcast(message);
+    broadcastMessage(message);
   });
 
   socket.on("close", () => {
