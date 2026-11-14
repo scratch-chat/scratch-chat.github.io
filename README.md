@@ -5,13 +5,13 @@
 ## 起動方法
 
 ```sh
-npm install
 npm start
 ```
 
 ブラウザーで `http://localhost:8000` を開きます。別のブラウザーや端末から同じURLにアクセスすると、参加者同士でリアルタイムに会話できます。
 
 `PORT` 環境変数で待受ポートを変更できます。
+WebSocketライブラリ`ws` 8.23.0は、MITライセンス表記を含めて`vendor/ws.cjs`に単一ファイルでまとめています。外部npm依存はありません。
 
 ## GitHub Pages
 

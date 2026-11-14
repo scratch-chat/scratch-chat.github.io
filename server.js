@@ -2,7 +2,7 @@ const http = require("node:http");
 const fs = require("node:fs");
 const net = require("node:net");
 const path = require("node:path");
-const { WebSocketServer, WebSocket } = require("ws");
+const { WebSocketServer, WebSocket } = require("./vendor/ws.cjs");
 
 const PORT = process.env.PORT === undefined ? 8000 : Number(process.env.PORT);
 const PUBLIC_DIR = path.join(__dirname, "public");

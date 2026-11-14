@@ -3,7 +3,7 @@ const { once } = require("node:events");
 const path = require("node:path");
 const { after, before, test } = require("node:test");
 const assert = require("node:assert/strict");
-const WebSocket = require("ws");
+const WebSocket = require("../vendor/ws.cjs");
 
 const root = path.join(__dirname, "..");
 const allowedIp = "203.0.113.42";
