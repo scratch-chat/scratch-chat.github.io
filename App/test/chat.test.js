@@ -4,7 +4,7 @@ const path = require("node:path");
 const { afterEach, beforeEach, test } = require("node:test");
 const assert = require("node:assert/strict");
 const { randomUUID } = require("node:crypto");
-const WebSocket = require("../vendor/ws.cjs");
+const WebSocket = require("../../vendor/ws.cjs");
 
 const root = path.join(__dirname, "..");
 let serverProcess;
