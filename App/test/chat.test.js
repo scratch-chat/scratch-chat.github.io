@@ -11,37 +11,47 @@ let serverProcess;
 let baseUrl;
 const payloadReaders = new WeakMap();
 
-beforeEach(async () => {
-  serverProcess = spawn(process.execPath, ["server.js"], {
+async function startServer(environment = {}) {
+  const child = spawn(process.execPath, ["server.js"], {
     cwd: root,
-    env: { ...process.env, PORT: "0" },
+    env: { ...process.env, ...environment, PORT: "0" },
     stdio: ["ignore", "pipe", "inherit"],
   });
 
   const address = await new Promise((resolve, reject) => {
     let output = "";
-    serverProcess.stdout.setEncoding("utf8");
-    serverProcess.stdout.on("data", (chunk) => {
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
       output += chunk;
       const match = output.match(/http:\/\/localhost:(\d+)/);
       if (match) {
         resolve(match[1]);
       }
     });
-    serverProcess.once("error", reject);
-    serverProcess.once("exit", (code) => {
+    child.once("error", reject);
+    child.once("exit", (code) => {
       reject(new Error(`Chat server exited before starting (code ${code})`));
     });
   });
 
-  baseUrl = `http://localhost:${address}`;
+  return { process: child, baseUrl: `http://localhost:${address}` };
+}
+
+async function stopServer(child) {
+  if (child && child.exitCode === null) {
+    child.kill("SIGTERM");
+    await once(child, "exit");
+  }
+}
+
+beforeEach(async () => {
+  const started = await startServer();
+  serverProcess = started.process;
+  baseUrl = started.baseUrl;
 });
 
 afterEach(async () => {
-  if (serverProcess && serverProcess.exitCode === null) {
-    serverProcess.kill("SIGTERM");
-    await once(serverProcess, "exit");
-  }
+  await stopServer(serverProcess);
 });
 
 function nextPayload(socket) {
@@ -75,8 +85,8 @@ async function nextPayloadOfType(socket, type) {
   }
 }
 
-async function createRoom(ownerToken = randomUUID()) {
-  const response = await fetch(`${baseUrl}/api/rooms`, {
+async function createRoom(ownerToken = randomUUID(), targetBaseUrl = baseUrl) {
+  const response = await fetch(`${targetBaseUrl}/api/rooms`, {
     method: "POST",
     headers: { "X-Owner-Token": ownerToken },
   });
@@ -84,15 +94,15 @@ async function createRoom(ownerToken = randomUUID()) {
   return response.json();
 }
 
-async function connectWebSocket(clientIp = "203.0.113.42", roomCode) {
+async function connectWebSocket(clientIp = "203.0.113.42", roomCode, targetBaseUrl = baseUrl) {
   const ownerToken = randomUUID();
   let createdRoom;
   if (!roomCode) {
-    createdRoom = await createRoom(ownerToken);
+    createdRoom = await createRoom(ownerToken, targetBaseUrl);
     roomCode = createdRoom.code;
   }
 
-  const socketUrl = new URL("/ws", baseUrl.replace("http:", "ws:"));
+  const socketUrl = new URL("/ws", targetBaseUrl.replace("http:", "ws:"));
   socketUrl.searchParams.set("room", roomCode);
   const socket = new WebSocket(socketUrl.toString(), {
     headers: { "x-forwarded-for": clientIp },
@@ -260,6 +270,68 @@ test("assigns room codes from 01 to 50 and rejects room creation above capacity"
   });
   assert.equal(fullResponse.status, 409);
   assert.match((await fullResponse.json()).error, /作成できる部屋がありません/);
+});
+
+test("releases a room and its history as soon as the last participant leaves", async (t) => {
+  const {
+    socket,
+    firstPayload: initPromise,
+    roomCode,
+  } = await connectWebSocket();
+  await initPromise;
+
+  const messagePromise = nextPayloadOfType(socket, "message");
+  socket.send(JSON.stringify({
+    type: "message",
+    name: "参加者",
+    text: "この履歴は退出時に削除される",
+    color: "#fffafa",
+  }));
+  await messagePromise;
+
+  const closed = once(socket, "close");
+  socket.close();
+  await closed;
+  await new Promise((resolve) => setTimeout(resolve, 25));
+
+  const recreatedRoom = await createRoom();
+  assert.equal(recreatedRoom.code, roomCode);
+
+  const { socket: rejoined, firstPayload: rejoinedInitPromise } = await connectWebSocket(
+    "192.0.2.10",
+    roomCode,
+  );
+  t.after(() => rejoined.close());
+  const rejoinedInit = await rejoinedInitPromise;
+  assert.deepEqual(rejoinedInit.messages, []);
+});
+
+test("disbands a room 24 hours after its last comment", async (t) => {
+  const shortLivedServer = await startServer({ ROOM_INACTIVITY_TIMEOUT_MS: "1200" });
+  t.after(() => stopServer(shortLivedServer.process));
+  const {
+    socket,
+    firstPayload: initPromise,
+    roomCode,
+  } = await connectWebSocket("203.0.113.42", undefined, shortLivedServer.baseUrl);
+  t.after(() => socket.close());
+  await initPromise;
+
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  const messagePromise = nextPayloadOfType(socket, "message");
+  socket.send(JSON.stringify({
+    type: "message",
+    name: "参加者",
+    text: "期限を更新するコメント",
+    color: "#fffafa",
+  }));
+  await messagePromise;
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  assert.equal(socket.readyState, WebSocket.OPEN);
+
+  assert.deepEqual(await nextPayloadOfType(socket, "room_disbanded"), { type: "room_disbanded" });
+  const replacementRoom = await createRoom(randomUUID(), shortLivedServer.baseUrl);
+  assert.equal(replacementRoom.code, roomCode);
 });
 
 test("keeps participants, messages, and participant counts isolated by room code", async (t) => {

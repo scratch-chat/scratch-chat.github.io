@@ -21,6 +21,13 @@ const MAX_ADMIN_ATTEMPTS_PER_WINDOW = 5;
 const DEFAULT_ROOM_CODE = "01";
 const ROOM_CODE_COUNT = 50;
 const ROOM_EMPTY_GRACE_MS = 5 * 60 * 1000;
+const DEFAULT_ROOM_INACTIVITY_TIMEOUT_MS = 24 * 60 * 60 * 1000;
+const ROOM_INACTIVITY_TIMEOUT_MS = process.env.ROOM_INACTIVITY_TIMEOUT_MS === undefined
+  ? DEFAULT_ROOM_INACTIVITY_TIMEOUT_MS
+  : Number(process.env.ROOM_INACTIVITY_TIMEOUT_MS);
+if (!Number.isSafeInteger(ROOM_INACTIVITY_TIMEOUT_MS) || ROOM_INACTIVITY_TIMEOUT_MS <= 0) {
+  throw new RangeError("ROOM_INACTIVITY_TIMEOUT_MS must be a positive integer.");
+}
 const ROOM_CODES = Array.from({ length: ROOM_CODE_COUNT }, (_, index) => String(index + 1).padStart(2, "0"));
 const ROOM_CODE_PATTERN = /^(0[1-9]|[1-4][0-9]|50)$/;
 const OWNER_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -56,6 +63,7 @@ function getRoom(roomCode) {
       creatorToken: null,
       commandLetters: null,
       emptyTimeout: null,
+      inactivityTimeout: null,
     };
     rooms.set(roomCode, room);
   } else if (room.emptyTimeout) {
@@ -135,9 +143,34 @@ function scheduleRoomRelease(roomCode, room) {
       return;
     }
 
-    clearHistory(roomCode, room);
-    rooms.delete(roomCode);
+    releaseRoom(roomCode, room);
   }, ROOM_EMPTY_GRACE_MS);
+}
+
+function scheduleRoomExpiry(roomCode, room) {
+  if (room.inactivityTimeout) {
+    clearTimeout(room.inactivityTimeout);
+  }
+  room.inactivityTimeout = setTimeout(() => {
+    if (rooms.get(roomCode) === room) {
+      disbandRoom(roomCode, room);
+    }
+  }, ROOM_INACTIVITY_TIMEOUT_MS);
+}
+
+function releaseRoom(roomCode, room) {
+  if (room.emptyTimeout) {
+    clearTimeout(room.emptyTimeout);
+    room.emptyTimeout = null;
+  }
+  if (room.inactivityTimeout) {
+    clearTimeout(room.inactivityTimeout);
+    room.inactivityTimeout = null;
+  }
+  clearHistory(roomCode, room);
+  if (rooms.get(roomCode) === room) {
+    rooms.delete(roomCode);
+  }
 }
 
 async function handleUpload(request, response, requestUrl) {
@@ -304,6 +337,7 @@ const server = http.createServer(async (request, response) => {
     room.creatorToken = creatorToken;
     room.commandLetters = createCommandLetters();
     scheduleRoomRelease(roomCode, room);
+    scheduleRoomExpiry(roomCode, room);
     respondWithJson(response, 201, { code: roomCode, commandLetters: room.commandLetters });
     return;
   }
@@ -358,14 +392,7 @@ function broadcastToRoom(roomCode, payload) {
 }
 
 function disbandRoom(roomCode, room) {
-  if (room.emptyTimeout) {
-    clearTimeout(room.emptyTimeout);
-    room.emptyTimeout = null;
-  }
-  clearHistory(roomCode, room);
-  if (rooms.get(roomCode) === room) {
-    rooms.delete(roomCode);
-  }
+  releaseRoom(roomCode, room);
 
   const serialized = JSON.stringify({ type: "room_disbanded" });
   for (const client of webSocketServer.clients) {
@@ -645,6 +672,7 @@ webSocketServer.on("connection", (socket, request) => {
       const removedMessage = room.history.shift();
       removeMediaFile(removedMessage.media);
     }
+    scheduleRoomExpiry(roomCode, room);
     broadcastMessage(roomCode, message);
   });
 
@@ -654,7 +682,7 @@ webSocketServer.on("connection", (socket, request) => {
     }
     broadcastToRoom(roomCode, { type: "participants", count: getParticipantCount(roomCode) });
     if (getParticipantCount(roomCode) === 0) {
-      scheduleRoomRelease(roomCode, room);
+      releaseRoom(roomCode, room);
     }
   });
 });
